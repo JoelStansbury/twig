@@ -1,0 +1,204 @@
+from http import HTTPStatus
+import json
+from typing import Annotated
+
+from fastapi import Depends, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
+import jwt
+from sqlmodel import Session, asc, delete, select
+
+from .models import Membership, TokenStr, Token
+from .constants import ALGORITHM, SECRET_KEY
+from .db.connection import get_session
+from .db.tables import DataSpace, Datum, SpaceMembership, User
+from .auth import create_access_token, get_password_hash, verify_password
+
+
+def user_get_current(token: TokenStr, session: Session = Depends(get_session)) -> User:
+    credentials_exception = HTTPException(
+        status_code=HTTPStatus.UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except jwt.InvalidTokenError:
+        raise credentials_exception
+    command = select(User).where(
+        User.username == username,
+    )
+    user = session.exec(command).first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+
+AuthenticatedUser = Annotated[User, Depends(user_get_current)]
+
+
+def user_login(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    session: Session = Depends(get_session),
+) -> Token:
+    command = select(User).where(User.username == form_data.username)
+    user = session.exec(command).first()
+    if verify_password(form_data.password, user.password_hash):
+        access_token = create_access_token({"sub": user.username})
+        return Token(access_token=access_token, token_type="bearer")
+    else:
+        raise HTTPException(401, detail="Incorrect Password")
+
+
+def user_create(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    session: Session = Depends(get_session),
+) -> None:
+    command = select(User).where(User.username == form_data.username)
+
+    if session.exec(command).all():
+        raise HTTPException(422, detail="User already exists")
+
+    password_hash = get_password_hash(form_data.password)
+    session.add(User(username=form_data.username, password_hash=password_hash))
+    session.commit()
+
+
+def space_create_new(
+    current_user: AuthenticatedUser, name: str, session: Session = Depends(get_session)
+) -> int:
+    space = DataSpace(name=name)
+    session.add(space)
+    session.commit()  # Resolves the space.id
+
+    obj = SpaceMembership(user=current_user.id, type=Membership.owner, space=space.id)
+    session.add(obj)
+    session.commit()
+    return space.id
+
+
+def datum_create(
+    current_user: AuthenticatedUser,
+    path: str,
+    value: str,
+    space_id: int,
+    session: Session = Depends(get_session),
+) -> Datum:
+    space = session.get(DataSpace, space_id)
+    if not space:
+        raise HTTPException(404)
+    if not space.public:
+        membership = session.exec(
+            select(SpaceMembership).where(
+                SpaceMembership.user == current_user.id,
+                SpaceMembership.space == space_id,
+            )
+        ).first()
+        if not membership:
+            raise HTTPException(401, "Not a member")
+        if not membership.type >= Membership.edit:
+            raise HTTPException(401, f"No write access to `{space.name}`")
+    obj = Datum(path=path, value=value, space=space_id)
+    session.add(obj)
+    session.commit()
+    return obj
+
+
+def get_membership(
+    current_user: AuthenticatedUser,
+    space: int,
+    session: Session = Depends(get_session),
+) -> Membership:
+    return session.get(SpaceMembership, (current_user.id, space))
+
+
+AuthenticatedMember = Annotated[SpaceMembership, Depends(get_membership)]
+
+
+def path_get(
+    membership: AuthenticatedMember,
+    path: str = "",
+    session: Session = Depends(get_session),
+) -> str:
+    if membership is None:
+        raise HTTPException(404)
+    statement = (
+        select(Datum)
+        .where(
+            Datum.path.startswith(
+                path
+            ),  # TODO: it may be faster to omit this if path==""
+            Datum.space == membership.space,
+        )
+        .order_by(asc(Datum.path))
+    )
+
+    rows = session.exec(statement).all()
+    if len(rows) == 0:
+        raise HTTPException(404)
+    if len(rows) == 1 and rows[0].path == path:
+        return rows[0].value
+
+    result = {}
+    for row in rows:
+        rel_path = row.path[len(path) :]
+        if rel_path:
+            cursor = result
+            parts = rel_path.split("/")
+            for part in parts[:-1]:
+                if part not in cursor:
+                    cursor[part] = {}
+                cursor = cursor[part]
+            cursor[parts[-1]] = json.loads(row.value)
+    return json.dumps(result)
+
+
+def _recursive_put(
+    obj: dict | list | int | float | str | None, space: int, path: str, session: Session
+):
+    if isinstance(obj, (list, int, str, float)) or obj is None:
+        row = session.get(Datum, (path, space))
+        value = json.dumps(obj)
+        if row:
+            if value != row.value:
+                row.value = json.dumps(obj)
+        else:
+            session.add(
+                Datum(
+                    path=path,
+                    space=space,
+                    value=value,
+                )
+            )
+    else:
+        for k, v in obj.items():
+            _recursive_put(v, space, f"{path}/{k}", session)
+
+
+def path_put(
+    membership: AuthenticatedMember,
+    path: str,
+    value: str,
+    session: Session = Depends(get_session),
+) -> None:
+    if membership is None:
+        raise HTTPException(404)
+    if membership.type > Membership.edit:
+        _recursive_put(json.loads(value), membership.space, path, session)
+        session.commit()
+
+
+def path_delete(
+    membership: AuthenticatedMember, path: str, session: Session = Depends(get_session)
+) -> None:
+    if membership is None:
+        raise HTTPException(404)
+    if membership.type > Membership.edit:
+        session.exec(
+            delete(Datum).where(
+                Datum.path.startswith(path), Datum.space == membership.space
+            )
+        )
+        session.commit()

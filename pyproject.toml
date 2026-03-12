@@ -1,0 +1,5 @@
+[project]
+name = "twig"
+version = "0.0.1"
+license = {file = "LICENSE"}
+description = "Add a short description here"

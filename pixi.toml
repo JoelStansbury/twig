@@ -1,0 +1,56 @@
+[workspace]
+authors = ["JoelStansbury <stansbury.joel@gmail.com>"]
+channels = ["conda-forge"]
+name = "twig"
+platforms = ["win-64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+code = "code ."
+# Database Server
+create-db-server = "initdb data || echo Skip"
+start-db-server = {cmd = "(rm log.txt && pg_ctl -D data -l log.txt start) || echo 'Already Running'", depends-on = ["create-db-server"]}
+stop = "pg_ctl -D data stop || echo 'Nothing to Stop'"
+# Database
+create-db = {cmd = 'psql -d postgres -c "CREATE DATABASE twig;" || echo "Already Created"', depends-on = ["start-db-server"]}
+create-test-db = {cmd = 'psql -d postgres -c "CREATE DATABASE testdb;" || echo "Already Created"', depends-on = ["start-db-server"]}
+drop-db = {cmd = 'psql -d postgres -c "DROP DATABASE twig;"', depends-on = ["start-db-server"]}
+# Server
+gen-key = {cmd = "openssl rand -hex 32 >> secret", outputs = ["secret"]}
+# Linting
+-ruff-fix = "ruff check src tests --fix"
+-ruff-check = "ruff check src tests"
+
+
+[tasks.start] 
+cmd = "echo 'Start' && python -m twig"
+depends-on = ["gen-key", "create-db"]
+env = { DATABASE_URL="postgresql+psycopg2:///twig" }
+
+[tasks.test] 
+cmd = "pytest"
+depends-on = ["gen-key", "create-test-db"]
+env = { DATABASE_URL="postgresql+psycopg2:///testdb" }
+
+
+[pypi-dependencies]
+twig = {path=".", editable = true}
+
+[dependencies]
+# Database
+postgresql = "*"
+psycopg2 = "*"
+# Python
+python = ">=3.14"
+pytest = "*"
+mypy = "*"
+ruff = "*"
+# Server
+fastapi = "*"
+pydantic = "*"
+sqlmodel = "*"
+uvicorn = "*"
+# Cryptography (Password Management)
+argon2-cffi = "*"
+pwdlib = "*"
+pyjwt = "*"
