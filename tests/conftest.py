@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 import pytest
 from sqlmodel import Session
 from fastapi.testclient import TestClient
@@ -48,3 +50,31 @@ def client(db_session):
         yield client
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def a_user(client) -> None:
+    response = client.put("/signup", data={"username": "TestUser", "password": "password"})
+    assert response.status_code == 200
+
+
+@pytest.fixture
+def token(client, a_user) -> str:
+    response = client.post("/token", data={"username": "TestUser", "password": "password"})
+    assert response.status_code == 200
+    token = response.json()
+    return token['access_token']
+
+
+@pytest.fixture
+def space(client, token) -> str:
+    test_space = {"id": "MySpace"}
+    response = client.put(
+        f"/space/create?{urlencode(test_space)}",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+    )
+    assert response.status_code == 200
+    return "MySpace"

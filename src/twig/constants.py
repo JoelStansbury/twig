@@ -15,3 +15,13 @@ DATABASE_PATH = ROOT / "database.db"
 SECRET_KEY = (ROOT / "secret").read_text()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+
+RFC_6901 = {
+    "~0": "~",
+    "~1": "/",
+}
+def rfc_6901_unescape(path:list[str]):
+    for i in len(path):
+        for k,v in RFC_6901.items():
+            path[i] = path[i].replace(k, v)

@@ -1,20 +1,28 @@
 
-from sqlmodel import Field, SQLModel
+from typing import Any
+
+from sqlmodel import Column, Field, SQLModel
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.mutable import MutableDict
+
 
 
 class DataSpace(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    name: str = Field(description="Name of the space", unique=True)
+    id: str = Field(description="Name of the space", primary_key=True)
     public: bool = Field(
         description="Expose this space to all users",
         default=False,
     )
+    data: dict[str, Any] = Field(
+        sa_column=Column(MutableDict.as_mutable(JSONB)), 
+        default_factory=dict
+    )
 
 
-class Datum(SQLModel, table=True):
+class Events(SQLModel, table=True):
     path: str = Field(description="Path to the datum", primary_key=True)
-    space: int = Field(foreign_key="dataspace.id", primary_key=True)
-    value: str = Field(description="JSONified value at path")
+    space: str = Field(foreign_key="dataspace.id", primary_key=True)
+    user: int = Field(foreign_key="user.id", primary_key=True)
 
 
 class User(SQLModel, table=True):
@@ -25,5 +33,5 @@ class User(SQLModel, table=True):
 
 class SpaceMembership(SQLModel, table=True):
     user: int = Field(foreign_key="user.id", primary_key=True)
-    space: int = Field(foreign_key="dataspace.id", primary_key=True)
+    space: str = Field(foreign_key="dataspace.id", primary_key=True)
     type: int = Field(description="owner / edit / view")

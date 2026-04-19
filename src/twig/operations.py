@@ -1,16 +1,18 @@
 from http import HTTPStatus
 import json
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 import jwt
-from sqlmodel import Session, asc, delete, select
+from sqlalchemy.dialects import postgresql
+from sqlmodel import ARRAY, TEXT, Session, asc, cast, delete, func, select, text, update
+from sqlalchemy.dialects.postgresql import JSONB
 
 from .models import Membership, TokenStr, Token
 from .constants import ALGORITHM, SECRET_KEY
 from .db.connection import get_session
-from .db.tables import DataSpace, Datum, SpaceMembership, User
+from .db.tables import DataSpace, SpaceMembership, User
 from .auth import create_access_token, get_password_hash, verify_password
 
 
@@ -34,7 +36,6 @@ def user_get_current(token: TokenStr, session: Session = Depends(get_session)) -
     if user is None:
         raise credentials_exception
     return user
-
 
 AuthenticatedUser = Annotated[User, Depends(user_get_current)]
 
@@ -67,48 +68,25 @@ def user_create(
 
 
 def space_create_new(
-    current_user: AuthenticatedUser, name: str, session: Session = Depends(get_session)
+    current_user: AuthenticatedUser, id: str, session: Session = Depends(get_session)
 ) -> int:
-    space = DataSpace(name=name)
+    space = DataSpace(id=id, data=dict())
     session.add(space)
     session.commit()  # Resolves the space.id
 
-    obj = SpaceMembership(user=current_user.id, type=Membership.owner, space=space.id)
+    obj = SpaceMembership(
+        user=current_user.id, 
+        type=Membership.owner, 
+        space=space.id
+    )
     session.add(obj)
     session.commit()
-    return space.id
-
-
-def datum_create(
-    current_user: AuthenticatedUser,
-    path: str,
-    value: str,
-    space_id: int,
-    session: Session = Depends(get_session),
-) -> Datum:
-    space = session.get(DataSpace, space_id)
-    if not space:
-        raise HTTPException(404)
-    if not space.public:
-        membership = session.exec(
-            select(SpaceMembership).where(
-                SpaceMembership.user == current_user.id,
-                SpaceMembership.space == space_id,
-            )
-        ).first()
-        if not membership:
-            raise HTTPException(401, "Not a member")
-        if not membership.type >= Membership.edit:
-            raise HTTPException(401, f"No write access to `{space.name}`")
-    obj = Datum(path=path, value=value, space=space_id)
-    session.add(obj)
-    session.commit()
-    return obj
+    return HTTPStatus.OK
 
 
 def get_membership(
     current_user: AuthenticatedUser,
-    space: int,
+    space: str,
     session: Session = Depends(get_session),
 ) -> Membership:
     return session.get(SpaceMembership, (current_user.id, space))
@@ -119,86 +97,125 @@ AuthenticatedMember = Annotated[SpaceMembership, Depends(get_membership)]
 
 def path_get(
     membership: AuthenticatedMember,
-    path: str = "",
+    path: list[str],
     session: Session = Depends(get_session),
-) -> str:
+) -> Any:
     if membership is None:
         raise HTTPException(404)
-    statement = (
-        select(Datum)
-        .where(
-            Datum.path.startswith(
-                path
-            ),  # TODO: it may be faster to omit this if path==""
-            Datum.space == membership.space,
-        )
-        .order_by(asc(Datum.path))
-    )
-
-    rows = session.exec(statement).all()
-    if len(rows) == 0:
-        raise HTTPException(404)
-    if len(rows) == 1 and rows[0].path == path:
-        return rows[0].value
-
-    result = {}
-    for row in rows:
-        rel_path = row.path[len(path) :]
-        if rel_path:
-            cursor = result
-            parts = rel_path.split("/")
-            for part in parts[:-1]:
-                if part not in cursor:
-                    cursor[part] = {}
-                cursor = cursor[part]
-            cursor[parts[-1]] = json.loads(row.value)
-    return json.dumps(result)
-
-
-def _recursive_put(
-    obj: dict | list | int | float | str | None, space: int, path: str, session: Session
-):
-    if isinstance(obj, (list, int, str, float)) or obj is None:
-        row = session.get(Datum, (path, space))
-        value = json.dumps(obj)
-        if row:
-            if value != row.value:
-                row.value = json.dumps(obj)
-        else:
-            session.add(
-                Datum(
-                    path=path,
-                    space=space,
-                    value=value,
+    if membership.type < Membership.view:
+        raise HTTPException(HTTPStatus.UNAUTHORIZED, detail=f"Access level: `{membership.type}` < `{Membership.view}`")
+    
+    try:
+        stmt = (
+            select(
+                DataSpace.data.op("#>")(
+                    cast(path, ARRAY(TEXT))
                 )
             )
-    else:
-        for k, v in obj.items():
-            _recursive_put(v, space, f"{path}/{k}", session)
+            .where(DataSpace.id == membership.space)
+        )
+        result = session.exec(stmt).first()
+        session.ex
 
+        if result is None:
+            raise HTTPException(HTTPStatus.NOT_FOUND)
+
+        # If path doesn't exist, Postgres returns NULL
+        if result is None:
+            return None
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(HTTPStatus.INTERNAL_SERVER_ERROR)
 
 def path_put(
     membership: AuthenticatedMember,
-    path: str,
-    value: str,
+    path: list[str | int],
+    value: Any,
     session: Session = Depends(get_session),
-) -> None:
+) -> int:
     if membership is None:
         raise HTTPException(404)
-    if membership.type > Membership.edit:
-        _recursive_put(json.loads(value), membership.space, path, session)
+    if membership.type < Membership.edit:
+        raise HTTPException(HTTPStatus.UNAUTHORIZED, detail=f"Access level: `{membership.type}` < `{Membership.edit}`")
+    
+    try:
+        stmt = (
+            update(DataSpace)
+            .where(DataSpace.id == membership.space)
+            .values(
+                data=func.jsonb_set(
+                    DataSpace.data,
+                    cast(json.dumps(path), ARRAY(TEXT)),
+                    cast(json.dumps(value), JSONB),
+                    True,  # create missing keys
+                )
+            )
+        )
+
+        # keys = "".join([f"['{k}']" for k in path])
+        # stmt = text(f"UPDATE dataspace SET data{keys}=:val WHERE id=:space;").bindparams(
+        #     space=membership.space,
+        #     val=json.dumps(value)
+        # )
+        print(stmt.compile())
+        result = session.exec(stmt)
+        # print(result.one())
         session.commit()
 
+        validate_stmt = select(DataSpace).where(DataSpace.id == membership.space)
+        validate = session.exec(validate_stmt)
+
+        # dspace:DataSpace = session.exec(select(DataSpace).where(DataSpace.id == membership.space))
+        # dspace.data
+        print("Validate", validate.one())
+
+        if result.rowcount == 0:
+            raise HTTPException(HTTPStatus.NOT_FOUND)
+        session.commit()
+
+        return HTTPStatus.OK
+    except HTTPException:
+        raise HTTPException(HTTPStatus.NOT_MODIFIED)
+    except Exception as e:
+        session.rollback()
+        raise e
 
 def path_delete(
     membership: AuthenticatedMember, path: str, session: Session = Depends(get_session)
 ) -> None:
     if membership is None:
         raise HTTPException(404)
-    if membership.type > Membership.edit:
-        session.exec(
-            delete(Datum).where(
-                Datum.path.startswith(path), Datum.space == membership.space
+    if membership.type < Membership.edit:
+        raise HTTPException(HTTPStatus.UNAUTHORIZED, f"Access level: `{membership.type}` < `{Membership.edit}`")
+
+    if not path:
+        # deleting root would wipe the whole document — probably unsafe
+        raise HTTPException(HTTPStatus.BAD_REQUEST, detail="Can not delete root")
+
+    try:
+        stmt = (
+            update(DataSpace)
+            .where(DataSpace.id == membership.space)
+            .values(
+                data=DataSpace.data.op("#-")(
+                    cast(path, ARRAY(TEXT))
+                )
             )
         )
+
+        result = session.exec(stmt)
+
+        if result.rowcount == 0:
+            raise HTTPException(HTTPStatus.NOT_FOUND)
+
         session.commit()
+
+    except HTTPException:
+        raise
+    except Exception:
+        session.rollback()
+        raise HTTPException(HTTPStatus.NOT_MODIFIED)

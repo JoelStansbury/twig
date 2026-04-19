@@ -54,3 +54,5 @@ uvicorn = "*"
 argon2-cffi = "*"
 pwdlib = "*"
 pyjwt = "*"
+
+jupyterlab = "*"

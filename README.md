@@ -18,6 +18,8 @@ This is an experimental database server.
 
 
 ## Usage
+### Put
+Set a single data point
 ```
 PUT <host>:<port>/?path=path%2Fto%2Fmy%2Fdatum&space=1&value=500"
 # path = path/to/my/datum 
@@ -27,13 +29,23 @@ PUT <host>:<port>/?path=path%2Fto%2Fmy%2Fdatum&space=1&value=500"
 # value = 500 
 #     this is the thing to put at the path
 ```
-Which is equivalent to
+This is equivalent
 ```
-PUT <host>:<port>/?path=path%2Fto&space=1&value=%7B%27my%27%3A+%7B%27datum%27%3A+500%7D%7D"
+PUT <host>:<port>/?path=path%2Fto&space=1&value=%7B%27my%27%3A+%7B%27datum%27%3A+500%7D%7D
 # path = path/to
 # space = 1
 # value = {"my": {"datum":500}}
 ```
 
-> That is to say that setting a dictionary will never delete data...<br>
-> I don't know what the consequences of this are
+**Multiple Values**
+```
+PUT <host>:<port>/?path=path%2Fto&space=1&value=%7B%27my%27%3A+%7B%27datum%27%3A+500%7D%7D
+# path = path/to
+# space = 1
+# value = {"my": {"datum":500, "otherDatum": {"value": "hello"}}}
+```
+This is equivalent
+```
+PUT <host>:<port>/?path=path%2Fto%2Fmy%2Fdatum&space=1&value=500
+PUT <host>:<port>/?path=path%2Fto%2Fmy%2Fdatum%2FotherDatum%2Fvalue&space=1&value=%22hello%22
+```

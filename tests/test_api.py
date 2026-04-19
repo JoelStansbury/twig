@@ -3,79 +3,60 @@ from urllib.parse import urlencode
 TEST_USER = {"username": "TestUser", "password": "password"}
 TEST_SPACE = {"name": "MySpace"}
 
-def test_create_user(client):
-    response = client.put("/signup", data=TEST_USER)
-    assert response.status_code == 200
+def test_create_user(client, a_user):
+    pass
 
-def test_login(client):
-    client.put("/signup", data=TEST_USER)
-    response = client.post("/token", data=TEST_USER)
-    assert response.status_code == 200
-    assert "access_token" in response.json()
+def test_login(client, token):
+    pass
 
-def test_create_space(client):
-    client.put("/signup", data=TEST_USER)
-    token = client.post("/token", data=TEST_USER).json()
-    response = client.put(
-        f"/space/create?{urlencode(TEST_SPACE)}",
-        headers={
-            "Authorization": f"Bearer {token['access_token']}",
-            "Content-Type": "application/json",
-        }
-    )
-    assert response.status_code == 200
-    assert isinstance(response.json(), int) # This is the ID of the new DataSpace
+def test_create_space(client, token, space):
+    pass
     
-def test_put(client):
-    client.put("/signup", data=TEST_USER)
-    token = client.post("/token", data=TEST_USER).json()
-    space = client.put(
-        f"/space/create?{urlencode(TEST_SPACE)}",
-        headers={
-            "Authorization": f"Bearer {token['access_token']}",
-            "Content-Type": "application/json",
-        }
-    ).json()
-
-    query = {
-        "path": "path/to/my/datum",
-        "space": space,
-        "value": "500"
-    }
+def test_put(client, token, space):
+    query = {"value": "500"}
     response = client.put(
-        f"/?{urlencode(query)}",
+        f"{space}/path/to/my/datum?{urlencode(query)}",
         headers={
-            "Authorization": f"Bearer {token['access_token']}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
     )
     assert response.status_code == 200
     
 
-def test_get(client):
-    client.put("/signup", data=TEST_USER)
-    token = client.post("/token", data=TEST_USER).json()
-    headers = {
-        "Authorization": f"Bearer {token['access_token']}",
+def test_get1(client, token, space):
+    headers={
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
-    space = client.put(f"/space/create?{urlencode(TEST_SPACE)}",headers=headers).json()
-    params1 = {
-        "path": "path/to/my/datum",
-        "space": space,
-        "value": "500"
-    }
-    client.put(f"/?{urlencode(params1)}",headers=headers)
 
-    params2 = {"space": space}
-    response = client.get(f"/?{urlencode(params2)}",headers=headers)
-    assert json.loads(response.json())["path"]["to"]["my"]["datum"] == 500
+    params1 = {"value": "500"}
+    response = client.put(f"{space}/path/to/my/datum?{urlencode(params1)}",headers=headers)
+    assert response.status_code == 200, response
+
+    response = client.get(f"{space}", headers=headers)
+    try:
+        assert response.json()["path"]["to"]["my"]["datum"] == 500
+    except:
+        raise ValueError(response.text)
     
-    params3 = {"path": "path/to/", "space": space}
-    response = client.get(f"/?{urlencode(params3)}",headers=headers)
-    assert json.loads(response.json())["my"]["datum"] == 500
+    response = client.get(f"{space}/path/to", headers=headers)
+    assert response.json()["my"]["datum"] == 500, response
     
-    params4 = {"path": "path/to/my/datum", "space": space}
-    response = client.get(f"/?{urlencode(params4)}",headers=headers)
-    assert json.loads(response.json()) == 500
+    response = client.get(f"/{space}/path/to/my/datum", headers=headers)
+    print(response.json())
+    assert response.json() == 500, response
+ 
+def test_get2(client, token, space):
+    headers={
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    params1 = {"value": "500"}
+    response = client.put(f"{space}///?{urlencode(params1)}",headers=headers)
+    assert response.status_code == 200, response
+
+    response = client.get(f"{space}",headers=headers)
+    assert response.json()[""] == 500, response
  
