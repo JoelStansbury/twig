@@ -1,13 +1,11 @@
 from http import HTTPStatus
-import json
 from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 import jwt
-from sqlalchemy.dialects import postgresql
-from sqlmodel import ARRAY, TEXT, Session, asc, cast, delete, func, select, text, update
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlmodel import ARRAY, TEXT, Session, cast, func, select, update
+from sqlalchemy.dialects.postgresql import JSONB, BOOLEAN
 
 from .models import Membership, TokenStr, Token
 from .constants import ALGORITHM, SECRET_KEY
@@ -106,16 +104,14 @@ def path_get(
         raise HTTPException(HTTPStatus.UNAUTHORIZED, detail=f"Access level: `{membership.type}` < `{Membership.view}`")
     
     try:
+        print("GET", path)
         stmt = (
             select(
-                DataSpace.data.op("#>")(
-                    cast(path, ARRAY(TEXT))
-                )
+                DataSpace.data.op("#>")(cast(path, ARRAY(TEXT)))
             )
             .where(DataSpace.id == membership.space)
         )
-        result = session.exec(stmt).first()
-        session.ex
+        result = session.exec(stmt).one()
 
         if result is None:
             raise HTTPException(HTTPStatus.NOT_FOUND)
@@ -133,7 +129,7 @@ def path_get(
 
 def path_put(
     membership: AuthenticatedMember,
-    path: list[str | int],
+    path: list[str],
     value: Any,
     session: Session = Depends(get_session),
 ) -> int:
@@ -143,39 +139,26 @@ def path_put(
         raise HTTPException(HTTPStatus.UNAUTHORIZED, detail=f"Access level: `{membership.type}` < `{Membership.edit}`")
     
     try:
+        print("PUT", membership.space, path, f"({type(path)})", value, f"({type(value)})")
         stmt = (
             update(DataSpace)
             .where(DataSpace.id == membership.space)
             .values(
                 data=func.jsonb_set(
                     DataSpace.data,
-                    cast(json.dumps(path), ARRAY(TEXT)),
-                    cast(json.dumps(value), JSONB),
-                    True,  # create missing keys
+                    cast(path, ARRAY(TEXT)),
+                    cast(value, JSONB),
+                    cast(True, BOOLEAN),
                 )
             )
         )
-
-        # keys = "".join([f"['{k}']" for k in path])
-        # stmt = text(f"UPDATE dataspace SET data{keys}=:val WHERE id=:space;").bindparams(
-        #     space=membership.space,
-        #     val=json.dumps(value)
-        # )
         print(stmt.compile())
-        result = session.exec(stmt)
-        # print(result.one())
+        session.exec(stmt)
         session.commit()
 
-        validate_stmt = select(DataSpace).where(DataSpace.id == membership.space)
+        validate_stmt = select(DataSpace.data).where(DataSpace.id == membership.space)
         validate = session.exec(validate_stmt)
-
-        # dspace:DataSpace = session.exec(select(DataSpace).where(DataSpace.id == membership.space))
-        # dspace.data
         print("Validate", validate.one())
-
-        if result.rowcount == 0:
-            raise HTTPException(HTTPStatus.NOT_FOUND)
-        session.commit()
 
         return HTTPStatus.OK
     except HTTPException:
