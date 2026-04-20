@@ -67,51 +67,31 @@ def user_create(
 
 
 def space_create_new(
-    current_user: AuthenticatedUser, name: str, session: Session = Depends(get_session)
-) -> int:
-    space = DataSpace(name=name)
+    current_user: AuthenticatedUser, 
+    name: str, 
+    session: Session = Depends(get_session)
+) -> HTTPStatus:
+    print("creating a space")
+    space = DataSpace(id=name)
     session.add(space)
     session.commit()  # Resolves the space.id
 
-    obj = SpaceMembership(user=current_user.id, type=Membership.owner, space=space.id)
+    obj = SpaceMembership(
+        user=current_user.username, 
+        type=Membership.owner, 
+        space=space.id
+    )
     session.add(obj)
     session.commit()
-    return space.id
-
-
-def datum_create(
-    current_user: AuthenticatedUser,
-    path: str,
-    value: str,
-    space_id: int,
-    session: Session = Depends(get_session),
-) -> Datum:
-    space = session.get(DataSpace, space_id)
-    if not space:
-        raise HTTPException(404)
-    if not space.public:
-        membership = session.exec(
-            select(SpaceMembership).where(
-                SpaceMembership.user == current_user.id,
-                SpaceMembership.space == space_id,
-            )
-        ).first()
-        if not membership:
-            raise HTTPException(401, "Not a member")
-        if not membership.type >= Membership.edit:
-            raise HTTPException(401, f"No write access to `{space.name}`")
-    obj = Datum(path=path, value=value, space=space_id)
-    session.add(obj)
-    session.commit()
-    return obj
+    return HTTPStatus.OK
 
 
 def get_membership(
     current_user: AuthenticatedUser,
-    space: int,
+    space: str,
     session: Session = Depends(get_session),
 ) -> Membership:
-    return session.get(SpaceMembership, (current_user.id, space))
+    return session.get(SpaceMembership, (current_user.username, space))
 
 
 AuthenticatedMember = Annotated[SpaceMembership, Depends(get_membership)]
@@ -182,12 +162,16 @@ def path_put(
     path: str,
     value: str,
     session: Session = Depends(get_session),
-) -> None:
+) -> HTTPStatus:
+    print("put")
     if membership is None:
-        raise HTTPException(404)
+        return HTTPStatus.UNAUTHORIZED
     if membership.type > Membership.edit:
+        print("doing put")
         _recursive_put(json.loads(value), membership.space, path, session)
         session.commit()
+        return HTTPStatus.OK
+    return HTTPStatus.BAD_REQUEST
 
 
 def path_delete(

@@ -29,7 +29,7 @@ def test_create_space(client):
 def test_put(client):
     client.put("/signup", data=TEST_USER)
     token = client.post("/token", data=TEST_USER).json()
-    space = client.put(
+    client.put(
         f"/space/create?{urlencode(TEST_SPACE)}",
         headers={
             "Authorization": f"Bearer {token['access_token']}",
@@ -39,7 +39,7 @@ def test_put(client):
 
     query = {
         "path": "path/to/my/datum",
-        "space": space,
+        "space": TEST_SPACE['name'],
         "value": "500"
     }
     response = client.put(
@@ -50,7 +50,6 @@ def test_put(client):
         }
     )
     assert response.status_code == 200
-    
 
 def test_get(client):
     client.put("/signup", data=TEST_USER)
@@ -62,20 +61,20 @@ def test_get(client):
     space = client.put(f"/space/create?{urlencode(TEST_SPACE)}",headers=headers).json()
     params1 = {
         "path": "path/to/my/datum",
-        "space": space,
+        "space": TEST_SPACE['name'],
         "value": "500"
     }
     client.put(f"/?{urlencode(params1)}",headers=headers)
 
-    params2 = {"space": space}
+    params2 = {"space": TEST_SPACE['name']}
     response = client.get(f"/?{urlencode(params2)}",headers=headers)
     assert json.loads(response.json())["path"]["to"]["my"]["datum"] == 500
     
-    params3 = {"path": "path/to/", "space": space}
+    params3 = {"path": "path/to/", "space": TEST_SPACE['name']}
     response = client.get(f"/?{urlencode(params3)}",headers=headers)
     assert json.loads(response.json())["my"]["datum"] == 500
     
-    params4 = {"path": "path/to/my/datum", "space": space}
+    params4 = {"path": "path/to/my/datum", "space": TEST_SPACE['name']}
     response = client.get(f"/?{urlencode(params4)}",headers=headers)
     assert json.loads(response.json()) == 500
  

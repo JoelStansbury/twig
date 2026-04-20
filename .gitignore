@@ -4,3 +4,8 @@
 *.egg-info
 __pycache__
 .vscode
+data
+log.txt
+secret
+Untitled*.ipynb
+.ipynb_checkpoints
