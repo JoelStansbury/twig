@@ -1,6 +1,6 @@
 from http import HTTPStatus
 import json
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
@@ -101,7 +101,7 @@ def path_get(
     membership: AuthenticatedMember,
     path: str = "",
     session: Session = Depends(get_session),
-) -> str:
+) -> Any:
     if membership is None:
         raise HTTPException(404)
     statement = (
@@ -117,9 +117,9 @@ def path_get(
 
     rows = session.exec(statement).all()
     if len(rows) == 0:
-        raise HTTPException(404)
+        raise HTTPException(HTTPStatus.NOT_FOUND)
     if len(rows) == 1 and rows[0].path == path:
-        return rows[0].value
+        return json.loads(rows[0].value)
 
     result = {}
     for row in rows:
@@ -132,7 +132,7 @@ def path_get(
                     cursor[part] = {}
                 cursor = cursor[part]
             cursor[parts[-1]] = json.loads(row.value)
-    return json.dumps(result)
+    return result
 
 
 def _recursive_put(
@@ -143,8 +143,9 @@ def _recursive_put(
         value = json.dumps(obj)
         if row:
             if value != row.value:
-                row.value = json.dumps(obj)
+                row.value = value
         else:
+            print(f"inserting {value} ({type(obj)})")
             session.add(
                 Datum(
                     path=path,
@@ -163,26 +164,29 @@ def path_put(
     value: str,
     session: Session = Depends(get_session),
 ) -> HTTPStatus:
-    print("put")
     if membership is None:
-        return HTTPStatus.UNAUTHORIZED
+        raise HTTPException(HTTPStatus.UNAUTHORIZED)
     if membership.type > Membership.edit:
-        print("doing put")
         _recursive_put(json.loads(value), membership.space, path, session)
         session.commit()
-        return HTTPStatus.OK
-    return HTTPStatus.BAD_REQUEST
+        raise HTTPException(HTTPStatus.OK)
+    raise HTTPException(HTTPStatus.BAD_REQUEST)
 
 
 def path_delete(
-    membership: AuthenticatedMember, path: str, session: Session = Depends(get_session)
-) -> None:
+    membership: AuthenticatedMember, 
+    path: str, 
+    session: Session = Depends(get_session)
+) -> HTTPStatus:
     if membership is None:
-        raise HTTPException(404)
-    if membership.type > Membership.edit:
-        session.exec(
-            delete(Datum).where(
-                Datum.path.startswith(path), Datum.space == membership.space
-            )
+        raise HTTPException(HTTPStatus.UNAUTHORIZED)
+    if membership.type < Membership.edit:
+        raise HTTPException(HTTPStatus.UNAUTHORIZED)
+    session.exec(
+        delete(Datum).where(
+            Datum.path.startswith(path), 
+            Datum.space == membership.space
         )
-        session.commit()
+    )
+    session.commit()
+    return HTTPStatus.OK
