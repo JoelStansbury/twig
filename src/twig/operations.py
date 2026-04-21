@@ -96,6 +96,15 @@ def get_membership(
 
 AuthenticatedMember = Annotated[SpaceMembership, Depends(get_membership)]
 
+def unescape(part:str):
+    return part.replace("~1", "/").replace("~0", "~")
+def escape(part:str):
+    return part.replace("/", "~1").replace("~", "~0")
+# def path_to_keys(path:str):
+#     if not path.startswith('/'):
+#         assert path == ""
+#         return []
+#     return [unescape(part) for part in path.split('/')[1:]]
 
 def path_get(
     membership: AuthenticatedMember,
@@ -104,6 +113,7 @@ def path_get(
 ) -> Any:
     if membership is None:
         raise HTTPException(404)
+
     statement = (
         select(Datum)
         .where(
@@ -123,10 +133,10 @@ def path_get(
 
     result = {}
     for row in rows:
-        rel_path = row.path[len(path) :]
+        rel_path = row.path[len(path) + 1 :]
         if rel_path:
             cursor = result
-            parts = rel_path.split("/")
+            parts = [unescape(part) for part in rel_path.split("/")]
             for part in parts[:-1]:
                 if part not in cursor:
                     cursor[part] = {}
@@ -155,7 +165,7 @@ def _recursive_put(
             )
     else:
         for k, v in obj.items():
-            _recursive_put(v, space, f"{path}/{k}", session)
+            _recursive_put(v, space, f"{path}/{escape(k)}", session)
 
 
 def path_put(
