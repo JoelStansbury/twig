@@ -48,16 +48,16 @@ def test_get(client):
     client.signup(TEST_USER)
     client.authenticate(TEST_USER)
     client.create_space(TEST_SPACE)
-    client.put("/path/to/my/datum", TEST_SPACE['name'], 500)
+    client.put("/path/to/my/datum~1", TEST_SPACE['name'], 500)
 
-    response = client.get("/path/to/my/datum", TEST_SPACE['name'])
+    response = client.get("/path/to/my/datum~1", TEST_SPACE['name'])
     assert response.json() == 500
 
     response = client.get("/path/to", TEST_SPACE['name'])
-    assert response.json()["my"]["datum"] == 500
+    assert response.json()["my"]["datum/"] == 500
 
     response = client.get("", TEST_SPACE['name'])
-    assert response.json()["path"]["to"]["my"]["datum"] == 500, response
+    assert response.json()["path"]["to"]["my"]["datum/"] == 500, response
 
 def test_delete(client):
     # 1. Setup: Authenticate
