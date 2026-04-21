@@ -21,6 +21,10 @@ gen-key = {cmd = "openssl rand -hex 32 >> secret", outputs = ["secret"]}
 -ruff-fix = "ruff check src tests --fix"
 -ruff-check = "ruff check src tests"
 
+[tasks.fix]
+depends-on = ['-ruff-fix']
+[tasks.lint]
+depends-on = ['-ruff-check']
 
 [tasks.start] 
 cmd = "echo 'Start' && python -m twig"

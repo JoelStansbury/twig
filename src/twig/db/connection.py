@@ -1,4 +1,4 @@
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import Session, create_engine
 
 import os
 

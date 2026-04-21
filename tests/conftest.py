@@ -6,7 +6,6 @@ from twig.client import APIClient
 from twig.main import app
 from twig.db.connection import get_session, engine
 
-from urllib.parse import urlencode
 
 #
 # Connection per test

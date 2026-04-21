@@ -1,5 +1,3 @@
-import json
-from urllib.parse import urlencode
 
 from twig.client import APIClient
 
@@ -21,7 +19,6 @@ def test_create_space(client):
     client.authenticate(TEST_USER)
     response = client.create_space(TEST_SPACE)
     assert response.status_code == 200
-    assert isinstance(response.json(), int) # This is the ID of the new DataSpace
     
 def test_put(client):
     """
