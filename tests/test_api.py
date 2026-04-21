@@ -53,8 +53,8 @@ def test_get(client):
     client.create_space(TEST_SPACE)
     client.put("path/to/my/datum", TEST_SPACE['name'], 500)
 
-    # response = client.get("path/to/my/datum", TEST_SPACE['name'])
-    # assert response.json() == 500
+    response = client.get("path/to/my/datum", TEST_SPACE['name'])
+    assert response.json() == 500
     response = client.get("path/to/", TEST_SPACE['name'])
     assert response.json()["my"]["datum"] == 500
     response = client.get("path/to/my/datum", TEST_SPACE['name'])
