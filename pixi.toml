@@ -9,7 +9,7 @@ version = "0.1.0"
 code = "code ."
 # Database Server
 create-db-server = "initdb data || echo Skip"
-start-db-server = {cmd = "(rm -f log.txt && pg_ctl -D data -l log.txt start) || echo 'Already Running'", depends-on = ["create-db-server"]}
+start-db-server = {cmd = "pg_ctl -D data -l log.txt start || echo 'Already Running'", depends-on = ["create-db-server"]}
 stop = "pg_ctl -D data stop || echo 'Nothing to Stop'"
 # Database
 create-db = {cmd = 'psql -d postgres -c "CREATE DATABASE twig;" || echo "Already Created"', depends-on = ["start-db-server"]}
