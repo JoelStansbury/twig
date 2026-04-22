@@ -1,4 +1,7 @@
 
+import json
+from pathlib import Path
+
 from twig.client import APIClient
 
 TEST_USER = {"username": "TestUser", "password": "password"}
@@ -68,3 +71,15 @@ def test_delete(client):
     response = client.delete("/path/to/delete/me", TEST_SPACE['name'])
     assert response.status_code == 200
     assert client.get("/path/to/delete/me", TEST_SPACE['name']).status_code == 404
+
+def test_real_data(client):
+    filename = Path(__file__).parent/"fixtures/json/cofax.json"
+    data = json.loads(filename.read_text())
+    client.signup(TEST_USER)
+    client.authenticate(TEST_USER)
+    client.create_space(TEST_SPACE)
+    client.put("", TEST_SPACE['name'], data)
+    response = client.get("", TEST_SPACE['name'])
+    assert data == response.json()
+    assert client.get("/web-app/taglib/taglib-uri", TEST_SPACE['name']).json() == "cofax.tld"
+    assert client.get("/web-app/servlet/0/servlet-name", TEST_SPACE['name']).json() == "cofaxCDS"
