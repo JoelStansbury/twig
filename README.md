@@ -8,6 +8,8 @@ This is an experimental database server.
 3. Structure is non-strict (one big document)
 4. Users must obtain permission to view / edit data within a `space`
 
+_This is not strictly a requirement, but the api does allow insersion into a dictionary that does not yet exist (aka `create_keys`). This may change in the future as the cost is likely more than it is worth. Without this requirement, we could probably just use a single JSONB column to hold data, as opposed to a new row for each primitive. However, tracking changes may be more complicated using that approach. This option is being explored in the `identity-crisis` branch_
+
 ## Commands
 | command | description |
 | ------- | ----------- |
