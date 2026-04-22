@@ -35,9 +35,7 @@ def user_get_current(token: TokenStr, session: Session = Depends(get_session)) -
         raise credentials_exception
     return user
 
-
 AuthenticatedUser = Annotated[User, Depends(user_get_current)]
-
 
 def user_login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -51,27 +49,28 @@ def user_login(
     else:
         raise HTTPException(401, detail="Incorrect Password")
 
-
 def user_create(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     session: Session = Depends(get_session),
 ) -> None:
     command = select(User).where(User.username == form_data.username)
+    if session.exec(command).first() is not None:
+        raise HTTPException(HTTPStatus.CONFLICT, detail="User already exists")
 
-    if session.exec(command).all():
-        raise HTTPException(422, detail="User already exists")
 
     password_hash = get_password_hash(form_data.password)
     session.add(User(username=form_data.username, password_hash=password_hash))
     session.commit()
 
-
 def space_create_new(
     current_user: AuthenticatedUser, 
     name: str, 
     session: Session = Depends(get_session)
-) -> HTTPStatus:
-    print("creating a space")
+) -> None:
+    
+    command = select(DataSpace).where(DataSpace.id == name)
+    if session.exec(command).first() is not None:
+        raise HTTPException(HTTPStatus.CONFLICT)
     space = DataSpace(id=name)
     session.add(space)
     session.commit()  # Resolves the space.id
@@ -83,8 +82,6 @@ def space_create_new(
     )
     session.add(obj)
     session.commit()
-    return HTTPStatus.OK
-
 
 def get_membership(
     current_user: AuthenticatedUser,
@@ -93,18 +90,13 @@ def get_membership(
 ) -> Membership:
     return session.get(SpaceMembership, (current_user.username, space))
 
-
 AuthenticatedMember = Annotated[SpaceMembership, Depends(get_membership)]
 
 def unescape(part:str):
     return part.replace("~1", "/").replace("~0", "~")
+
 def escape(part:str):
     return part.replace("/", "~1").replace("~", "~0")
-# def path_to_keys(path:str):
-#     if not path.startswith('/'):
-#         assert path == ""
-#         return []
-#     return [unescape(part) for part in path.split('/')[1:]]
 
 def path_get(
     membership: AuthenticatedMember,
@@ -112,8 +104,9 @@ def path_get(
     session: Session = Depends(get_session),
 ) -> Any:
     if membership is None:
-        raise HTTPException(404)
-
+        raise HTTPException(HTTPStatus.UNAUTHORIZED, detail="No membership status")
+    if membership.type < Membership.view:
+        raise HTTPException(HTTPStatus.UNAUTHORIZED, detail="No read access")
     statement = (
         select(Datum)
         .where(
@@ -159,7 +152,6 @@ def path_get(
             result = json.loads(row.value)
     return result
 
-
 def _recursive_put(
     obj: dict | list | int | float | str | None, space: int, path: str, session: Session
 ):
@@ -192,13 +184,12 @@ def _recursive_put(
         for k, v in obj.items():
             _recursive_put(v, space, f"{path}/{escape(k)}", session)
 
-
 def path_put(
     membership: AuthenticatedMember,
     path: str,
     value: str,
     session: Session = Depends(get_session),
-) -> HTTPStatus:
+) -> None:
     if membership is None:
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
     if membership.type > Membership.edit:
@@ -227,7 +218,7 @@ def path_delete(
     membership: AuthenticatedMember, 
     path: str, 
     session: Session = Depends(get_session)
-) -> HTTPStatus:
+) -> None:
     if membership is None:
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
     if membership.type < Membership.edit:
@@ -249,12 +240,13 @@ def path_delete(
                 Datum.path.startswith(child_path),
                 Datum.space == membership.space
             )).fetchall()
-            if rows.count == 0:
-                break
+            cont = False
             for row in rows:
+                cont = True
                 suffix = row.path.lstrip(child_path)
                 row.path = decrement_path + suffix
+            if not cont:
+                break
             decrement_path = child_path
 
     session.commit()
-    return HTTPStatus.OK

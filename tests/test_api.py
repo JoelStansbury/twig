@@ -1,4 +1,5 @@
 
+from http import HTTPStatus
 import json
 from pathlib import Path
 
@@ -8,8 +9,8 @@ TEST_USER = {"username": "TestUser", "password": "password"}
 TEST_SPACE = {"name": "MySpace"}
 
 def test_create_user(client: APIClient):
-    response = client.signup(TEST_USER)
-    assert response.status_code == 200
+    assert client.signup(TEST_USER).status_code == 200
+    assert client.signup(TEST_USER).status_code == 409
 
 def test_login(client):
     client.signup(TEST_USER)
@@ -20,8 +21,8 @@ def test_login(client):
 def test_create_space(client):
     client.signup(TEST_USER)
     client.authenticate(TEST_USER)
-    response = client.create_space(TEST_SPACE)
-    assert response.status_code == 200
+    assert client.create_space(TEST_SPACE).status_code == 200
+    assert client.create_space(TEST_SPACE).status_code == 409
     
 def test_put(client):
     """
@@ -83,3 +84,32 @@ def test_real_data(client):
     assert data == response.json()
     assert client.get("/web-app/taglib/taglib-uri", TEST_SPACE['name']).json() == "cofax.tld"
     assert client.get("/web-app/servlet/0/servlet-name", TEST_SPACE['name']).json() == "cofaxCDS"
+
+def test_read_access(client):
+    user1 = TEST_USER
+    user2 = {'username': "SecondUser", "password":"password"}
+
+    client.signup(user1)
+    client.authenticate(user1)
+    client.create_space(TEST_SPACE)
+    client.put("/",TEST_SPACE['name'], "pass")
+    assert client.get("/",TEST_SPACE['name']).json() == "pass"
+    
+    client.signup(user2)
+    client.authenticate(user2)
+    response = client.get("/",TEST_SPACE['name'])
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.json() == {'detail': 'No membership status'}
+
+def test_list_deletion(client):
+    client.signup(TEST_USER)
+    client.authenticate(TEST_USER)
+    client.create_space(TEST_SPACE)
+    client.put("/some_list", TEST_SPACE['name'], [1,2,3])
+    assert client.get("/some_list/0", TEST_SPACE['name']).json() == 1
+    assert client.delete("/some_list/0", TEST_SPACE['name']).status_code == 200
+    assert client.get("/some_list/0", TEST_SPACE['name']).json() == 2
+    assert client.delete("/some_list/0", TEST_SPACE['name']).status_code == 200
+    assert client.get("/some_list/0", TEST_SPACE['name']).json() == 3
+    assert client.delete("/some_list/0", TEST_SPACE['name']).status_code == 200
+    assert client.get("/some_list/0", TEST_SPACE['name']).status_code == HTTPStatus.NOT_FOUND
