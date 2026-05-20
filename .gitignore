@@ -4,8 +4,8 @@
 *.egg-info
 __pycache__
 .vscode
-data
-log.txt
+cluster
+db.log
 secret
 Untitled*.ipynb
 .ipynb_checkpoints

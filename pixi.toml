@@ -7,16 +7,10 @@ version = "0.1.0"
 
 [tasks]
 code = "code ."
-# Database Server
-create-db-server = "initdb data || echo Skip"
-start-db-server = {cmd = "pg_ctl -D data -l log.txt start || echo 'Already Running'", depends-on = ["create-db-server"]}
-stop = "pg_ctl -D data stop || echo 'Nothing to Stop'"
-# Database
-create-db = {cmd = 'psql -d postgres -c "CREATE DATABASE twig;" || echo "Already Created"', depends-on = ["start-db-server"]}
-create-test-db = {cmd = 'psql -d postgres -c "CREATE DATABASE testdb;" || echo "Already Created"', depends-on = ["start-db-server"]}
-drop-db = {cmd = 'psql -d postgres -c "DROP DATABASE twig;"', depends-on = ["start-db-server"]}
-# Server
 gen-key = {cmd = "openssl rand -hex 32 >> secret", outputs = ["secret"]}
+create-db = "python scripts/db-init.py -n twig"
+create-test-db = "python scripts/db-init.py -n testdb --delete"
+
 # Linting
 -ruff-fix = "ruff check src tests --fix"
 -ruff-check = "ruff check src tests"
@@ -25,6 +19,7 @@ gen-key = {cmd = "openssl rand -hex 32 >> secret", outputs = ["secret"]}
 depends-on = ['-ruff-fix']
 [tasks.lint]
 depends-on = ['-ruff-check']
+
 
 [tasks.start] 
 cmd = "echo 'Start' && python -m twig"
