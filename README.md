@@ -21,8 +21,3 @@ _This is not strictly a requirement, but the api does allow insersion into a dic
 
 ## Usage
 see [client.py](src/twig/client.py) and [test_api.py](tests/test_api.py)
-
-> [!WARNING]
-> Lists are supported, but are not efficient, so avoid them if possible.
-
-
