@@ -10,7 +10,7 @@ class APIClient:
         self.token = None
 
     def signup(self, user_data) -> Response:
-        return self.client.put("/signup", data=user_data)
+        return self.client.post("/signup", data=user_data)
     
     def authenticate(self, user_data) -> Response:
         response = self.client.post("/token", data=user_data)
@@ -46,6 +46,6 @@ class APIClient:
 
     def create_space(self, space_data) -> Response:
         return self.client.put(
-            f"/space/create?{urlencode(space_data)}", 
+            f"/create?{urlencode(space_data)}", 
             headers=self._get_headers()
         )

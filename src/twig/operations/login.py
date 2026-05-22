@@ -66,6 +66,7 @@ def space_create_new(
     name: str, 
     session: Session = Depends(get_session)
 ) -> None:
+    print(current_user, name, session)
     
     command = select(DataSpace).where(DataSpace.id == name)
     if session.exec(command).first() is not None:

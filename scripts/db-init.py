@@ -5,18 +5,19 @@ Create a postgres db
 from argparse import ArgumentParser
 import os
 from pathlib import Path
-from subprocess import check_call, check_output, call
+from subprocess import check_call, check_output, call, run
 import platform
 
 
 def running(process:str) -> list[str]:
     if platform.system() == "Windows":
         import psutil
-        return [
+        return bool([
             p.info['pid'] for p in psutil.process_iter(attrs=['pid', 'name']) 
             if process in p.info['name']
-        ]
-    return check_output(["pgrep", "postgres"]).decode().split()
+        ])
+    
+    return int(run(["pgrep", "postgres", "-c"], text=True, capture_output=True).stdout)>0
 
 def db_exists(dbname:str):
     query = f"SELECT datname FROM pg_database WHERE datname = '{dbname}';"

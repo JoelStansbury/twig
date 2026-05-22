@@ -1,0 +1,12 @@
+[project]
+authors = ["Joel Stansbury <stansbury.joel@gmail.com>"]
+channels = ["conda-forge"]
+description = "Add a short description here"
+name = "webapp"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+nodejs = ">=25.8.2,<25.9"
