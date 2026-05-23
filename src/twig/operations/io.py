@@ -5,16 +5,26 @@ from typing import Any
 from fastapi import Depends, HTTPException
 from sqlmodel import Session, asc, delete, select
 
-from ..models import Membership
+from ..models import ApiQuery, Membership
 from ..db.connection import get_session
 from ..db.tables import Datum
 from .login import AuthenticatedMember
+from ._utils import _recursive_put, is_element_of_list, unescape
 
-def unescape(part:str):
-    return part.replace("~1", "/").replace("~0", "~")
-
-def escape(part:str):
-    return part.replace("/", "~1").replace("~", "~0")
+def api(
+    membership: AuthenticatedMember,
+    query: ApiQuery,
+    session: Session = Depends(get_session)
+):
+    if query.action=="PUT":
+        if query.value:
+            return path_put(membership, query.path, query.value, session)
+        else:
+            return HTTPException(HTTPStatus.NO_CONTENT, detail="Expected `value` JSON object.")
+    elif query.action=="GET":
+        return path_get(membership, query.path, session)    
+    elif query.action == "DELETE":
+        return path_delete(membership, query.path, session)
 
 def path_get(
     membership: AuthenticatedMember,
@@ -68,38 +78,6 @@ def path_get(
             result = json.loads(row.value)
     return result
 
-def _recursive_put(
-    obj: dict | list | int | float | str | None, space: int, path: str, session: Session
-):
-    if isinstance(obj, (int, str, float)) or obj is None:
-        row = session.get(Datum, (path, space))
-        value = json.dumps(obj)
-        if row:
-            if value != row.value:
-                row.value = value
-        else:
-            print(f"inserting {value} ({type(obj)})")
-            session.add(
-                Datum(
-                    path=path,
-                    space=space,
-                    value=value,
-                )
-            )
-    elif isinstance(obj, list):
-        session.add(
-            Datum(
-                path=path,
-                space=space,
-                value="[]",
-            )
-        )
-        for i, el in enumerate(obj):
-            _recursive_put(el, space, f"{path}/{i}", session)
-    else:
-        for k, v in obj.items():
-            _recursive_put(v, space, f"{path}/{escape(k)}", session)
-
 def path_put(
     membership: AuthenticatedMember,
     path: str,
@@ -114,21 +92,6 @@ def path_put(
         session.commit()
         raise HTTPException(HTTPStatus.OK)
     raise HTTPException(HTTPStatus.BAD_REQUEST)
-
-def is_element_of_list(path: str, space:str, session: Session):
-    parent_path, *maybe_child = path.rsplit('/', 1)
-    if not maybe_child:
-        return False
-    child = maybe_child[0]
-    if not child.isdigit():
-        return False
-    parent = session.exec(select(Datum).where(
-        Datum.path == parent_path,
-        Datum.space == space
-    )).one_or_none()
-    if parent and parent.value == "[]":
-        return True
-    return False
 
 def path_delete(
     membership: AuthenticatedMember, 

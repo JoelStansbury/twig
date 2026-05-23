@@ -6,7 +6,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 import jwt
 from sqlmodel import Session, select
 
-from ..models import Membership, TokenStr, Token
+from ..models import CreateSpaceQuery, Membership, TokenStr, Token
 from ..constants import ALGORITHM, SECRET_KEY
 from ..db.connection import get_session
 from ..db.tables import DataSpace, SpaceMembership, User
@@ -63,15 +63,14 @@ def user_create(
 
 def space_create_new(
     current_user: AuthenticatedUser, 
-    name: str, 
+    query: CreateSpaceQuery, 
     session: Session = Depends(get_session)
 ) -> None:
-    print(current_user, name, session)
     
-    command = select(DataSpace).where(DataSpace.id == name)
+    command = select(DataSpace).where(DataSpace.id == query.name)
     if session.exec(command).first() is not None:
         raise HTTPException(HTTPStatus.CONFLICT)
-    space = DataSpace(id=name)
+    space = DataSpace(id=query.name)
     session.add(space)
     session.commit()  # Resolves the space.id
 

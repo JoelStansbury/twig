@@ -35,8 +35,11 @@ def test_put(client):
     client.signup(TEST_USER)
     client.authenticate(TEST_USER)
     client.create_space(TEST_SPACE)
-    response = client.put("/path/to/my/datum",TEST_SPACE['name'], "500")
-    assert response.status_code == 200
+    print("here")
+    response = client.put("/path/to/my/datum", TEST_SPACE['name'], 500)
+    if response.status_code != 200:
+        assert False, response.__dict__
+
 
 def test_get(client):
     """

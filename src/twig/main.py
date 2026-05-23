@@ -2,13 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel
 
+from twig.operations.io import api
+
 from .operations import (
-    path_get,
-    path_put,
     user_create,
     user_login,
     space_create_new,
-    path_delete,
 )
 from .db.connection import engine
 
@@ -29,7 +28,5 @@ app.add_middleware(
 )
 app.add_api_route("/signup", endpoint=user_create, methods=["POST"])
 app.add_api_route("/token", endpoint=user_login, methods=["POST"])
-app.add_api_route("/create", endpoint=space_create_new, methods=["PUT"])
-app.add_api_route("/", endpoint=path_put, methods=["PUT"])
-app.add_api_route("/", endpoint=path_get, methods=["GET"])
-app.add_api_route("/", endpoint=path_delete, methods=["DELETE"])
+app.add_api_route("/create", endpoint=space_create_new, methods=["POST"])
+app.add_api_route("/api", endpoint=api, methods=["POST"])
