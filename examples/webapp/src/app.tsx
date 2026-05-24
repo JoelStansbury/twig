@@ -30,7 +30,7 @@ export default function App() {
   )
   const test = useCallback(
     async () => {
-      await client.create_space({name:"mySpace"}).catch(console.log)
+      await client.create_space("mySpace").catch(console.log)
       await client.put("", "mySpace", {"this":{"is":{"the":["end",1,2,3,4,5]}}})
       client.get("/this/is/the", "mySpace").then(
         (response) => {

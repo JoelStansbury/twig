@@ -8,8 +8,7 @@ export default class APIClient {
 
     get headers() {
         return {
-            "Authorization": `Bearer ${this.token}`,
-            "Content-Type": "application/json",
+            "Authorization": `Bearer ${this.token}`
         }
     }
 
@@ -41,47 +40,43 @@ export default class APIClient {
         )
     }
 
-    async put(path:string, space:string, value: any): Promise<Response> {
-        const params = new URLSearchParams({path, space, value:JSON.stringify(value)});
+    async _api(action: "PUT" | "GET" | "DELETE", path:string, space:string, value: any = undefined): Promise<Response> {
+        const body = JSON.stringify({action, path, value:JSON.stringify(value)});
         return await fetch(
-            `${SERVER_URL}/?${params.toString()}`,
+            `${SERVER_URL}/api?space=${space}`,
             {
-                method:"PUT",
-                headers: this.headers
+                method:"POST",
+                headers: {
+                    ...this.headers,
+                    'Content-Type': 'application/json',
+                },
+                body
             }
         )
+    }
+
+    async put(path:string, space:string, value: any): Promise<Response> {
+        return await this._api("PUT", path, space, value)
     }
 
     async delete(path:string, space:string): Promise<Response> {
-        const params = new URLSearchParams({path, space});
-        return await fetch(
-            `${SERVER_URL}/?${params.toString()}`,
-            {
-                method:"DELETE",
-                headers: this.headers
-            }
-        )
+        return await this._api("DELETE", path, space)
     }
     
     async get(path:string, space:string): Promise<Response> {
-        const params = new URLSearchParams({path, space});
-        return await fetch(
-            `${SERVER_URL}/?${params.toString()}`,
-            {
-                method:"GET",
-                headers: this.headers
-            }
-        )
+        return await this._api("GET", path, space)
     }
 
-    async create_space(space_data: any): Promise<Response> {
-        const params = new URLSearchParams(space_data);
-        console.log(params.toString())
+    async create_space(name: string): Promise<Response> {
         return await fetch(
-            `${SERVER_URL}/create?${params.toString()}`,
+            `${SERVER_URL}/create`,
             {
-                method:"PUT",
-                headers: this.headers
+                method:"POST",
+                headers: {
+                    ...this.headers,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({name})
             }
         )
     }
