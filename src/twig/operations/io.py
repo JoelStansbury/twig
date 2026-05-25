@@ -72,10 +72,7 @@ def path_get(
                 assert int(parts[-1]) == len(cursor)
                 cursor.append(json.loads(row.value))
             else:
-                try:
-                    cursor[parts[-1]] = json.loads(row.value)
-                except:
-                    print(f"ERROR: attempted to set {cursor}[{parts[-1]}] to {json.loads(row.value)}")
+                cursor[parts[-1]] = json.loads(row.value)
         else: # lists
             assert not result, f"Object should have been empty due to sorting. {result}"
             result = json.loads(row.value)
@@ -92,6 +89,7 @@ def path_put(
     if membership.type > Membership.edit:
         obj = json.loads(value)
         path_delete(membership, f"{path}/", session)
+
         _recursive_put(obj, membership.space, path, session)
         session.commit()
         raise HTTPException(HTTPStatus.OK)

@@ -17,40 +17,25 @@ def _recursive_put(
     obj: JSON_DATA, space: int, path: str, session: Session
 ):
     if isinstance(obj, (int, str, float)) or obj is None:
-        row = session.get(Datum, (path, space))
         value = json.dumps(obj)
-        if row:
-            if value != row.value:
-                row.value = value
-        else:
-            session.add(
-                Datum(
-                    path=path,
-                    space=space,
-                    value=value,
-                )
-            )
     elif isinstance(obj, list):
+        value = "[]"
+        for i, el in enumerate(obj):
+            _recursive_put(el, space, f"{path}/{i}", session)
+    else:
+        value = "{}"
+        for k, v in obj.items():
+            _recursive_put(v, space, f"{path}/{escape(k)}", session)
+    if row:=session.get(Datum, (path, space)):
+        row.value = value
+    else:
         session.add(
             Datum(
                 path=path,
                 space=space,
-                value="[]",
+                value=value,
             )
         )
-        for i, el in enumerate(obj):
-            _recursive_put(el, space, f"{path}/{i}", session)
-    else:
-        # TODO: Update or add
-        # session.add(
-        #     Datum(
-        #         path=path,
-        #         space=space,
-        #         value="{}",
-        #     )
-        # )
-        for k, v in obj.items():
-            _recursive_put(v, space, f"{path}/{escape(k)}", session)
 
 
 def is_element_of_list(path: str, space:str, session: Session):
