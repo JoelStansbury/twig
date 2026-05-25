@@ -1,59 +1,109 @@
-import React, { IframeHTMLAttributes, useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import APIClient from './utils/client';
+import SchemaEditor from "./components/schema-editor";
+import { flattenJson } from "./utils/flatten";
+import PrimitiveList from "./components/primitive-list";
 
-
-export default function App() {
-  const client = new APIClient()
-  const [username, setUsername] = useState<string|null>(null)
-  const signup = useCallback(
-    () => {
-      const form = formRef.current as HTMLFormElement | null
-      if (form) {
-        const formData = new FormData(form)
-        const data = {username:formData.get("username"),password:formData.get("password")}
-        console.log(JSON.stringify(data))
-        client.signup(data)
-      }
-    },
-    []
-  )
-  const signin = useCallback(
-    () => {
-      const form = formRef.current as HTMLFormElement | null
-      if (form) {
-        const formData = new FormData(form)
-        const data = {username:formData.get("username"),password:formData.get("password")}
-        client.authenticate(data).then(()=>{setUsername(data.username as string)})
-      }
-    },
-    []
-  )
-  const test = useCallback(
-    async () => {
-      await client.create_space("mySpace").catch(console.log)
-      await client.put("", "mySpace", {"this":{"is":{"the":["end",1,2,3,4,5]}}})
-      client.get("/this/is/the", "mySpace").then(
-        (response) => {
-          response.json().then(console.log)
+const DEFAULT = {
+  "properties": {
+    "user": {
+      "properties": {
+        "profile": {
+          "properties": {
+            "age": {
+              "type": "number"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "type": "object"
         }
-      )
+      },
+      "type": "object"
+    }
+  },
+  "type": "object"
+}
+
+// const client = new APIClient();
+const user = {
+  "username": "TestUser",
+  "password": "password"
+};
+const space = "TestSpace"
+export default function App() {
+  const [token, setToken] = useState<string | undefined>(undefined)
+  const [text, setText] = useState<string | null>(null)
+  const [entries, setEntries] = useState<any>({})
+
+  const client = new APIClient(token)
+  if (!token) {
+    client.signup(user).then(()=>{
+      client.authenticate(user).then((v) => {
+        setToken(v)
+        client.create_space(space).then(()=>{
+          client.delete("", space).then(()=>{
+            client.put("", space, DEFAULT).then(()=>{
+              setEntries(flattenJson(DEFAULT))
+              setText(JSON.stringify(DEFAULT, undefined, 2))
+            })
+          })
+        });
+      })
+    });
+  }
+
+  const onPrimitiveChange = useCallback(
+    (path:string, value:string) => {
+      setEntries((old:any)=>{
+        const newEntries = structuredClone(old);
+        newEntries[path] = value;
+        return newEntries;
+      })
+      try {
+        client.put(path, space, JSON.parse(value)).then(()=>{
+          client.get("", space).then(
+            (resp)=>{
+              setText(JSON.stringify(resp, undefined, 2))
+            }
+          )
+        })
+      } catch(error) {
+        // console.log(error)
+      }
     },
-    []
+    [client]
   )
-  const formRef = useRef(null)
+
+  const onTextChange = useCallback(
+    (value:string) => {
+      setText(value)
+      try {
+        const data = JSON.parse(value)
+        client.delete("", space).then(
+          () => {
+            client.put("", space, data)
+          }
+        )
+        setEntries(flattenJson(data))
+      } catch (error) {
+        // console.log(error)
+      }
+    },
+    [client]
+  )
   return <div className="app">
-    <form ref={formRef}>
-      <label>Username: </label>
-      <input type="text" name="username"></input>
-      <br/>
-      <label>Password: </label>
-      <input type="password" name="password"></input>
-      <br/>
-    </form>
-    <button onClick={signup}>Signup</button>
-    <button onClick={signin}>Signin</button><br/>
-    {username ? `logged in as ${username}` : "Not logged in" }<br/>
-    <button onClick={test}>Test</button>
+    <div
+      style={{
+        height:"100%",
+        display: "flex",
+        flexDirection: "row"
+      }}
+    >
+      <SchemaEditor value={text || ""} onChange={onTextChange}/>
+      <PrimitiveList entries={entries} onChange={onPrimitiveChange}/>
+    </div>
     </div>
 }
 

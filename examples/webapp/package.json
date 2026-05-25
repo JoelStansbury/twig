@@ -1,4 +1,7 @@
 {
+  "overrides": {
+    "dompurify": ">=3.3.3"
+  },
   "devDependencies": {
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -7,6 +10,7 @@
     "vite-plugin-singlefile": "^2.3.3"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   }

@@ -41,6 +41,14 @@ def _recursive_put(
         for i, el in enumerate(obj):
             _recursive_put(el, space, f"{path}/{i}", session)
     else:
+        # TODO: Update or add
+        # session.add(
+        #     Datum(
+        #         path=path,
+        #         space=space,
+        #         value="{}",
+        #     )
+        # )
         for k, v in obj.items():
             _recursive_put(v, space, f"{path}/{escape(k)}", session)
 

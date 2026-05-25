@@ -2,19 +2,23 @@ const SERVER_URL = "http://localhost:8000"
 
 export default class APIClient {
     private token: string | undefined
-    constructor() {
-        console.log("Initialize APIClient")
+    constructor(token?:string) {
+        this.token = token
+    }
+    get ready() {
+        return typeof this.token === "string"
     }
 
     get headers() {
         return {
-            "Authorization": `Bearer ${this.token}`
+            "Authorization": `Bearer ${this.token}`,
+            'Content-Type': 'application/json',
         }
     }
 
     async signup(data:any) {
         const params = new URLSearchParams(data);
-        await fetch(
+        return await fetch(
             `${SERVER_URL}/signup`,
             {
                 method:"POST",
@@ -23,18 +27,19 @@ export default class APIClient {
         )
     }
 
-    async authenticate(data:any) {
+    async authenticate(data:any): Promise<string> {
         const params = new URLSearchParams(data);
-        await fetch(
+        return await fetch(
             `${SERVER_URL}/token`,
             {
                 method:"POST",
                 body:params
             }
         ).then(
-            (response) => {
-                response.json().then((obj)=>{
-                    this.token = obj.access_token
+            async (obj:Response)=>{
+                return await obj.json().then((value)=>{
+                    this.token = value.access_token
+                    return value.access_token
                 })
             }
         )
@@ -42,14 +47,12 @@ export default class APIClient {
 
     async _api(action: "PUT" | "GET" | "DELETE", path:string, space:string, value: any = undefined): Promise<Response> {
         const body = JSON.stringify({action, path, value:JSON.stringify(value)});
+        console.log(action, `"${path}"`, value)
         return await fetch(
             `${SERVER_URL}/api?space=${space}`,
             {
                 method:"POST",
-                headers: {
-                    ...this.headers,
-                    'Content-Type': 'application/json',
-                },
+                headers: this.headers,
                 body
             }
         )
@@ -63,8 +66,10 @@ export default class APIClient {
         return await this._api("DELETE", path, space)
     }
     
-    async get(path:string, space:string): Promise<Response> {
-        return await this._api("GET", path, space)
+    async get(path:string, space:string): Promise<any> {
+        return await this._api("GET", path, space).then((response) => {
+            return response.json()
+        });
     }
 
     async create_space(name: string): Promise<Response> {
@@ -72,10 +77,7 @@ export default class APIClient {
             `${SERVER_URL}/create`,
             {
                 method:"POST",
-                headers: {
-                    ...this.headers,
-                    'Content-Type': 'application/json',
-                },
+                headers: this.headers,
                 body: JSON.stringify({name})
             }
         )
