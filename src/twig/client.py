@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import json
 from typing import Any
 
@@ -57,3 +58,11 @@ class APIClient:
     
     def get(self, path, space) -> Response:
         return self._api("GET", path, space)
+    
+    @contextmanager
+    def websocket(self):
+        with self.client.websocket_connect(
+            f"/watch?token={self.token}"
+        ) as ws:
+            yield ws
+

@@ -3,28 +3,28 @@ import json
 from typing import Any
 
 from fastapi import Depends, HTTPException
-from sqlmodel import Session, asc, delete, select
+from sqlmodel import Session, asc, select
 
 from ..models import ApiQuery, Membership
 from ..db.connection import get_session
 from ..db.tables import Datum
 from .login import AuthenticatedMember
-from ._utils import _recursive_put, is_element_of_list, unescape
+from ._utils import delete_datum, _recursive_put, is_element_of_list, unescape
 
-def api(
+async def api(
     membership: AuthenticatedMember,
     query: ApiQuery,
     session: Session = Depends(get_session)
 ):
     if query.action=="PUT":
         if query.value:
-            return path_put(membership, query.path, query.value, session)
+            return await path_put(membership, query.path, query.value, session)
         else:
             return HTTPException(HTTPStatus.NO_CONTENT, detail="Expected `value` JSON object.")
     elif query.action=="GET":
         return path_get(membership, query.path, session)    
     elif query.action == "DELETE":
-        return path_delete(membership, query.path, session)
+        return await path_delete(membership, query.path, session)
 
 def path_get(
     membership: AuthenticatedMember,
@@ -78,7 +78,7 @@ def path_get(
             result = json.loads(row.value)
     return result
 
-def path_put(
+async def path_put(
     membership: AuthenticatedMember,
     path: str,
     value: str,
@@ -88,14 +88,13 @@ def path_put(
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
     if membership.type > Membership.edit:
         obj = json.loads(value)
-        path_delete(membership, f"{path}/", session)
-
-        _recursive_put(obj, membership.space, path, session)
+        await path_delete(membership, f"{path}/", session)
+        await _recursive_put(obj, membership.space, path, session)
         session.commit()
         raise HTTPException(HTTPStatus.OK)
     raise HTTPException(HTTPStatus.BAD_REQUEST)
 
-def path_delete(
+async def path_delete(
     membership: AuthenticatedMember, 
     path: str, 
     session: Session = Depends(get_session)
@@ -104,12 +103,7 @@ def path_delete(
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
     if membership.type < Membership.edit:
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
-    session.exec(
-        delete(Datum).where(
-            Datum.path.startswith(path), 
-            Datum.space == membership.space
-        )
-    )
+    await delete_datum(membership.space, path, session)
     if is_element_of_list(path, membership.space, session):
         parent_path, child_idx_str = path.rsplit('/', 1)
         i = int(child_idx_str)

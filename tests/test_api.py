@@ -116,3 +116,39 @@ def test_list_deletion(client):
     assert client.get("/some_list/0", TEST_SPACE['name']).json() == 3
     assert client.delete("/some_list/0", TEST_SPACE['name']).status_code == 200
     assert client.get("/some_list/0", TEST_SPACE['name']).status_code == HTTPStatus.NOT_FOUND
+
+
+def test_watch_put(client):
+    client.signup(TEST_USER)
+    client.authenticate(TEST_USER)
+    client.create_space(TEST_SPACE)
+
+    with client.websocket() as ws:
+        print("HERE")
+        ws.send_json({
+            "action": "subscribe",
+            "path": "/settings",
+            "space": TEST_SPACE['name']
+        })
+        message = ws.receive_json()
+        assert message == {
+            "type": "subscribed",
+            "path": "/settings",
+            "space": TEST_SPACE['name'],
+        }, message
+        response = client.put(
+            "/settings/theme",
+            TEST_SPACE["name"],
+            "dark",
+        )
+
+        assert response.status_code == HTTPStatus.OK
+
+        # raise ValueError("Done")
+        message = ws.receive_json()
+        # print(message)
+        assert message == {
+            "action": "insert",
+            "path": "/settings/theme",
+            "value": '"dark"',
+        }, message

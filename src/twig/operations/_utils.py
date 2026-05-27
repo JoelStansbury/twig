@@ -1,8 +1,9 @@
 
 import json
 
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
+from .watch import watch_manager
 from ..db.tables import Datum
 from ..models import JSON_DATA
 
@@ -13,21 +14,30 @@ def unescape(part:str):
 def escape(part:str):
     return part.replace("~", "~0").replace("/", "~1")
 
-def _recursive_put(
-    obj: JSON_DATA, space: int, path: str, session: Session
+async def _recursive_put(
+    obj: JSON_DATA, space: str, path: str, session: Session
 ):
     if isinstance(obj, (int, str, float)) or obj is None:
         value = json.dumps(obj)
     elif isinstance(obj, list):
         value = "[]"
         for i, el in enumerate(obj):
-            _recursive_put(el, space, f"{path}/{i}", session)
+            await _recursive_put(el, space, f"{path}/{i}", session)
     else:
         value = "{}"
         for k, v in obj.items():
-            _recursive_put(v, space, f"{path}/{escape(k)}", session)
+            await _recursive_put(v, space, f"{path}/{escape(k)}", session)
     if row:=session.get(Datum, (path, space)):
         row.value = value
+        await watch_manager.publish(
+            path=path,
+            space=space,
+            payload={
+                "path": path,
+                "action": "update",
+                "value": value,
+            }
+        )
     else:
         session.add(
             Datum(
@@ -36,7 +46,44 @@ def _recursive_put(
                 value=value,
             )
         )
+        await watch_manager.publish(
+            path=path,
+            space=space,
+            payload={
+                "path": path,
+                "action": "insert",
+                "value": value,
+            }
+        )
 
+async def delete_datum(
+    space: int, path: str, session: Session
+):
+    statement = (
+        select(Datum.path)
+        .where(
+            Datum.path.startswith(path),
+            Datum.space == space,
+        )
+    )
+    rows = session.exec(statement).all()
+
+    session.exec(
+        delete(Datum).where(
+            Datum.path.startswith(path), 
+            Datum.space == space
+        )
+    )
+    for path in rows:
+        await watch_manager.publish(
+            path=path,
+            space=space,
+            payload={
+                "path": path,
+                "action": "delete",
+                "value": None
+            }
+        )
 
 def is_element_of_list(path: str, space:str, session: Session):
     parent_path, *maybe_child = path.rsplit('/', 1)
