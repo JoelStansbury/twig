@@ -54,7 +54,6 @@ class WatchManager:
         self.subscriptions[key][
             id(websocket)
         ] = websocket
-        print("SUBSCRIBED", self.subscriptions)
 
     async def unsubscribe(
         self,
@@ -114,7 +113,6 @@ class WatchManager:
         path: str,
         payload: dict,
     ) -> None:
-        print("Publishing", payload, self.subscriptions)
         path = self.normalize_path(path)
 
         #
@@ -199,9 +197,7 @@ async def watch_endpoint(
     websocket: WebSocket,
     session: Session = Depends(get_session)
 ):
-    print("WATCH ENDPOINT")
     user = websocket_auth(websocket, session)
-    print(user)
 
     if user is None:
         await websocket.close(
@@ -221,8 +217,6 @@ async def watch_endpoint(
             )
 
             if action == "subscribe":
-                print("SUBSCRIBE")
-
                 path = message.get(
                     "path",
                     "",

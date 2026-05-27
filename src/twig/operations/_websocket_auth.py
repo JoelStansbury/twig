@@ -14,7 +14,6 @@ def websocket_auth(
     token = websocket.query_params.get(
         "token"
     )
-    print("token: ", token)
     if not token:
         return None
     try:

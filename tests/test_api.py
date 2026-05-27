@@ -35,7 +35,6 @@ def test_put(client):
     client.signup(TEST_USER)
     client.authenticate(TEST_USER)
     client.create_space(TEST_SPACE)
-    print("here")
     response = client.put("/path/to/my/datum", TEST_SPACE['name'], 500)
     if response.status_code != 200:
         assert False, response.__dict__
@@ -124,7 +123,6 @@ def test_watch_put(client):
     client.create_space(TEST_SPACE)
 
     with client.websocket() as ws:
-        print("HERE")
         ws.send_json({
             "action": "subscribe",
             "path": "/settings",
@@ -144,9 +142,7 @@ def test_watch_put(client):
 
         assert response.status_code == HTTPStatus.OK
 
-        # raise ValueError("Done")
         message = ws.receive_json()
-        # print(message)
         assert message == {
             "action": "insert",
             "path": "/settings/theme",

@@ -27,7 +27,6 @@ class APIClient:
         }
 
     def create_space(self, space_data) -> Response:
-        print(space_data)
         return self.client.post(
             "/create", 
             headers=self._get_headers(),
@@ -35,11 +34,6 @@ class APIClient:
         )
 
     def _api(self, action:ACTION, path:str, space:str, value:Any = "") -> Response:
-        print({
-            "path": path,
-            "value": value,
-            "space": space,
-        })
         return self.client.post(
             f"/api?space={space}", 
             headers=self._get_headers(), 
