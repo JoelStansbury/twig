@@ -146,5 +146,5 @@ def test_watch_put(client):
         assert message == {
             "action": "insert",
             "path": "/settings/theme",
-            "value": '"dark"',
+            "value": "dark",
         }, message

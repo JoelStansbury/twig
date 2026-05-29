@@ -35,7 +35,7 @@ async def _recursive_put(
             payload={
                 "path": path,
                 "action": "update",
-                "value": value,
+                "value": obj,
             }
         )
     else:
@@ -52,7 +52,7 @@ async def _recursive_put(
             payload={
                 "path": path,
                 "action": "insert",
-                "value": value,
+                "value": obj,
             }
         )
 
