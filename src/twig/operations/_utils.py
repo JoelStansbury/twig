@@ -5,7 +5,7 @@ from sqlmodel import Session, delete, select
 
 from .watch import watch_manager
 from ..db.tables import Datum
-from ..models import JSON_DATA
+from ..models import JsonValue
 
 
 def unescape(part:str):
@@ -15,7 +15,7 @@ def escape(part:str):
     return part.replace("~", "~0").replace("/", "~1")
 
 async def _recursive_put(
-    obj: JSON_DATA, space: str, path: str, session: Session
+    obj: JsonValue, space: str, path: str, session: Session
 ):
     if isinstance(obj, (int, str, float)) or obj is None:
         value = json.dumps(obj)

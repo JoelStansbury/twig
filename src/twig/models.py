@@ -1,13 +1,13 @@
 
 from pydantic import BaseModel
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal
 
 from fastapi import Depends
 
 from .auth import oauth2_scheme
 
 TokenStr = Annotated[str, Depends(oauth2_scheme)]
-JSON_DATA = dict | list | int | float | str | None
+JsonValue = dict | list | str | int | float | bool | None
 ACTION = Literal["PUT", "GET", "DELETE"]
 
 class Token(BaseModel):
@@ -30,4 +30,4 @@ class CreateSpaceQuery(BaseModel):
 class ApiQuery(BaseModel):
     action: ACTION
     path: str
-    value: Optional[str] = None
+    value: JsonValue = None

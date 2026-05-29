@@ -1,5 +1,4 @@
 from contextlib import contextmanager
-import json
 from typing import Any
 
 from fastapi import Response
@@ -40,7 +39,7 @@ class APIClient:
             json={
                 "action": action, 
                 "path": path,
-                "value": json.dumps(value)
+                "value": value
             }
         )
     

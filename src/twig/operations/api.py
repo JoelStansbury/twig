@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import Depends, HTTPException
 from sqlmodel import Session, asc, select
 
-from ..models import ApiQuery, Membership
+from ..models import ApiQuery, JsonValue, Membership
 from ..db.connection import get_session
 from ..db.tables import Datum
 from .login import AuthenticatedMember
@@ -35,10 +35,19 @@ def path_get(
         raise HTTPException(HTTPStatus.UNAUTHORIZED, detail="No membership status")
     if membership.type < Membership.view:
         raise HTTPException(HTTPStatus.UNAUTHORIZED, detail="No read access")
+
+    result = session.exec(select(Datum.value).where(Datum.path == path, Datum.space == membership.space)).one_or_none()
+    if result is None:
+        result = "{}"
+    
+    result = json.loads(result)
+    if not isinstance(result, (dict, list)):
+        return result
+    children_of_path = f"{path}/"
     statement = (
         select(Datum)
         .where(
-            Datum.path.startswith(path),
+            Datum.path.startswith(children_of_path),
             Datum.space == membership.space,
         )
         .order_by(asc(Datum.path))
@@ -50,7 +59,6 @@ def path_get(
     if len(rows) == 1 and rows[0].path == path:
         return json.loads(rows[0].value)
 
-    result = {}
     for row in rows:
         rel_path = row.path[len(path) + 1 :]
         if rel_path:
@@ -81,15 +89,14 @@ def path_get(
 async def path_put(
     membership: AuthenticatedMember,
     path: str,
-    value: str,
+    value: JsonValue,
     session: Session = Depends(get_session),
 ) -> None:
     if membership is None:
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
     if membership.type > Membership.edit:
-        obj = json.loads(value)
         await path_delete(membership, f"{path}/", session)
-        await _recursive_put(obj, membership.space, path, session)
+        await _recursive_put(value, membership.space, path, session)
         session.commit()
         raise HTTPException(HTTPStatus.OK)
     raise HTTPException(HTTPStatus.BAD_REQUEST)
