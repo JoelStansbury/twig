@@ -1,14 +1,121 @@
 # Twig
-This is an experimental database server.
+Twig is an experimental document database designed around JSON Pointer paths.
+
+Unlike traditional document stores, Twig decomposes documents into primitive values and stores each value independently. Documents are reconstructed on demand when queried.
+
+The primary goal is to make deeply nested data:
+
+- easy to query
+- easy to update
+- easy to observe in realtime
+
+
+## Why?
+
+Many applications work with large nested structures but only modify small portions of them.
+
+For example:
+
+{
+  "user": {
+    "profile": {
+      "name": "Joel"
+    }
+  }
+}
+
+Updating /user/profile/name should not require rewriting the entire document.
+
+Twig stores primitive values separately and uses JSON Pointer paths as stable identifiers, allowing updates and subscriptions to target specific locations within a document.
+
+
+
+## Core Concepts
+### Spaces
+
+Data is partitioned into spaces.
+
+A user must have permission to access a space before they can:
+
+- read data
+- modify data
+- subscribe to changes
+
+Spaces provide the primary isolation boundary within the database.
+
+### Paths
+
+Twig uses JSON Pointer style paths:
+
+```
+/user/profile/name
+/settings/theme
+/projects/123/tasks/0/title
+```
+
+Paths identify locations within a document hierarchy.
+
+### Storage Model
+
+Documents are decomposed into primitive values.
+
+Example:
+
+{
+  "user": {
+    "name": "Joel",
+    "age": 35
+  }
+}
+
+Is stored internally as:
+
+```
+/user/name -> "Joel"
+/user/age  -> 35
+```
+
+Queries reconstruct documents from matching paths.
+
+This storage model enables:
+
+- atomic updates
+- efficient change tracking
+- path-based subscriptions
+- document reconstruction on demand
+
+### Realtime Subscriptions
+
+Twig supports websocket subscriptions.
+
+Clients may subscribe to a path:
+
+`WATCH /user`
+
+Any update beneath that path will be delivered to the subscriber:
+
+`PUT /user/profile/name`
+
+Results in a notification such as:
+
+```json
+{
+  "type": "put",
+  "path": "/user/profile/name",
+  "value": "Joel"
+}
+```
+
+Subscription routing uses the same path hierarchy as storage and querying.
+
 
 ## Design Principles
-1. Queries should look vaguely like [JSONPath](https://www.npmjs.com/package/jsonpath)
-2. Leaf nodes should be automatically extracted and maintained as independent records in the database, mainly for tracking changes.
-   1. Tracking atomic changes within arbitrarily nested datastructures is the primary reason for doing this.
-3. Structure is non-strict (one big document)
-4. Users must obtain permission to view / edit data within a `space`
-
-_This is not strictly a requirement, but the api does allow insersion into a dictionary that does not yet exist (aka `create_keys`). This may change in the future as the cost is likely more than it is worth. Without this requirement, we could probably just use a single JSONB column to hold data, as opposed to a new row for each primitive. However, tracking changes may be more complicated using that approach. This option is being explored in the `identity-crisis` branch_
+1. Paths should be simple and familiar.
+2. Leaf values should be independently addressable.
+3. Atomic updates should be first-class operations.
+4. Realtime subscriptions should follow the same path semantics as queries.
+5. Structure is flexible and schema-free.
+6. Permissions are enforced at the space level.
 
 ## Commands
 | command | description |
