@@ -108,13 +108,13 @@ def test_list_deletion(client):
     client.authenticate(TEST_USER)
     client.create_space(TEST_SPACE)
     client.put("/some_list", TEST_SPACE['name'], [1,2,3])
-    assert client.get("/some_list/0", TEST_SPACE['name']).json() == 1
+    assert client.get(   "/some_list/0", TEST_SPACE['name']).json() == 1
     assert client.delete("/some_list/0", TEST_SPACE['name']).status_code == 200
-    assert client.get("/some_list/0", TEST_SPACE['name']).json() == 2
+    assert client.get(   "/some_list/0", TEST_SPACE['name']).json() == 2
     assert client.delete("/some_list/0", TEST_SPACE['name']).status_code == 200
-    assert client.get("/some_list/0", TEST_SPACE['name']).json() == 3
+    assert client.get(   "/some_list/0", TEST_SPACE['name']).json() == 3
     assert client.delete("/some_list/0", TEST_SPACE['name']).status_code == 200
-    assert client.get("/some_list/0", TEST_SPACE['name']).status_code == HTTPStatus.NOT_FOUND
+    assert client.get(   "/some_list/0", TEST_SPACE['name']).status_code == HTTPStatus.NOT_FOUND
 
 
 def test_watch_put(client):

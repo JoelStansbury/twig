@@ -1,7 +1,7 @@
 from http import HTTPStatus
 from typing import Annotated
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, WebSocket
 from fastapi.security import OAuth2PasswordRequestForm
 import jwt
 from sqlmodel import Session, select
@@ -90,3 +90,21 @@ def get_membership(
     return session.get(SpaceMembership, (current_user.username, space))
 
 AuthenticatedMember = Annotated[SpaceMembership, Depends(get_membership)]
+
+def websocket_auth(
+    websocket: WebSocket,
+    session: Session,
+) -> User:
+
+    token = websocket.query_params.get(
+        "token"
+    )
+    if not token:
+        return None
+    try:
+        return user_get_current(
+            token,
+            session
+        )
+    except Exception:
+        return None
