@@ -87,10 +87,10 @@ This storage model enables:
 
 ### Realtime Subscriptions
 
-<video width="640" height="360" controls>
-  <source src="https://youtu.be/CYSsFLE-bE0" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+[![Watch the video](https://youtu.be/CYSsFLE-bE0)](https://youtu.be/CYSsFLE-bE0)
+
+<iframe width="560" height="315" src="https://youtu.be/CYSsFLE-bE0" frameborder="0" allowfullscreen></iframe>
+
 
 
 Twig supports websocket subscriptions.
