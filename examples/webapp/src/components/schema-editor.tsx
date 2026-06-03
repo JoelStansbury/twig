@@ -1,3 +1,4 @@
+import React from "react";
 import Editor, { useMonaco } from "@monaco-editor/react";
 import { useCallback, useEffect } from "react";
 

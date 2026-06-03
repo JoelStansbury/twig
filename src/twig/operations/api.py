@@ -3,10 +3,11 @@ import json
 from typing import Any
 
 from fastapi import Depends, HTTPException
-from sqlmodel import Session, asc, select
+from sqlmodel import Session, asc, delete, select
 
 from ..models import ApiQuery, JsonValue, Membership
 from ..db.connection import get_session
+from .watch import watch_manager
 from ..db.tables import Datum
 from .login import AuthenticatedMember
 from ._utils import delete_datum, _recursive_put, is_element_of_list, unescape
@@ -17,10 +18,7 @@ async def api(
     session: Session = Depends(get_session)
 ):
     if query.action=="PUT":
-        if query.value:
-            return await path_put(membership, query.path, query.value, session)
-        else:
-            return HTTPException(HTTPStatus.NO_CONTENT, detail="Expected `value` JSON object.")
+        return await path_put(membership, query.path, query.value, session)
     elif query.action=="GET":
         return path_get(membership, query.path, session)    
     elif query.action == "DELETE":
@@ -94,12 +92,19 @@ async def path_put(
 ) -> None:
     if membership is None:
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
-    if membership.type > Membership.edit:
-        await path_delete(membership, f"{path}/", session)
-        await _recursive_put(value, membership.space, path, session)
-        session.commit()
-        raise HTTPException(HTTPStatus.OK)
-    raise HTTPException(HTTPStatus.BAD_REQUEST)
+    if membership.type < Membership.edit:
+        raise HTTPException(HTTPStatus.UNAUTHORIZED)
+    
+    all_paths = set(session.exec(select(Datum.path).where(Datum.path.startswith(path))).all())
+    touched_paths = set(await _recursive_put(value, membership.space, path, session))
+    for orphaned_path in all_paths - touched_paths:
+        session.exec(delete(Datum).where(Datum.path == orphaned_path))
+        await watch_manager.publish(
+            path=path,
+            space=membership.space,
+            action="delete",
+        )
+    session.commit()
 
 async def path_delete(
     membership: AuthenticatedMember, 
@@ -130,5 +135,4 @@ async def path_delete(
             if not cont:
                 break
             decrement_path = child_path
-
     session.commit()

@@ -9,8 +9,9 @@ export function flattenJson(
     for (let i=0; i<value.length; i++) {
         flattenJson(value[i], `${basePath}/${i}`, collector)
     }
+  } else if (value === null) {
+    collector[basePath] = "null"
   } else if (typeof value === "object") {
-
     for (const [k,v] of Object.entries(value)) {
       flattenJson(v, `${basePath}/${k}`, collector)
     }

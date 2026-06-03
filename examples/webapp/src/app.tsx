@@ -1,29 +1,15 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import APIClient from './utils/client';
 import SchemaEditor from "./components/schema-editor";
 import { flattenJson } from "./utils/flatten";
 import PrimitiveList from "./components/primitive-list";
+import TwigStore from "./utils/store";
 
 const DEFAULT = {
-  "properties": {
-    "user": {
-      "properties": {
-        "profile": {
-          "properties": {
-            "age": {
-              "type": "number"
-            },
-            "name": {
-              "type": "string"
-            }
-          },
-          "type": "object"
-        }
-      },
-      "type": "object"
-    }
-  },
-  "type": "object"
+  "settings": {
+    "darkMode": false,
+    "font": "calibri"
+  }
 }
 
 // const client = new APIClient();
@@ -33,47 +19,51 @@ const user = {
 };
 const space = "TestSpace"
 export default function App() {
-  const [token, setToken] = useState<string | undefined>(undefined)
-  const [text, setText] = useState<string | null>(null)
-  const [entries, setEntries] = useState<any>({})
+  const [text, setText] = useState<string | null>(JSON.stringify(DEFAULT, undefined, 2))
+  const [entries, setEntries] = useState<any>(flattenJson(DEFAULT))
 
-  const client = new APIClient(token)
-  if (!token) {
-    client.signup(user).then(()=>{
-      client.authenticate(user).then((v) => {
-        setToken(v)
-        client.create_space(space).then(()=>{
-          client.delete("", space).then(()=>{
-            client.put("", space, DEFAULT).then(()=>{
-              setEntries(flattenJson(DEFAULT))
-              setText(JSON.stringify(DEFAULT, undefined, 2))
-            })
-          })
-        });
-      })
-    });
-  }
+  const clientRef = useRef<APIClient>(null)
+
+  const storeRef = useRef<TwigStore>(null)
+
+  useEffect(() => {
+        async function init() {
+            const client =
+                new APIClient()
+            clientRef.current = client
+            await client.signup(user)
+            await client.authenticate(user)
+            await client.create_space(space).catch(() => {})
+
+            const store = new TwigStore(client)
+            storeRef.current = store
+            await store.connect()
+            store.subscribe(
+              "", 
+              space, 
+              (msg)=>{
+                setText(JSON.stringify(msg, undefined, 2))
+                setEntries(flattenJson(msg))
+                }
+            )
+          
+        }
+        init()
+    }, [])
 
   const onPrimitiveChange = useCallback(
-    (path:string, value:string) => {
+    async (path:string, value:string) => {
       setEntries((old:any)=>{
         const newEntries = structuredClone(old);
         newEntries[path] = value;
         return newEntries;
       })
       try {
-        client.put(path, space, JSON.parse(value)).then(()=>{
-          client.get("", space).then(
-            (resp)=>{
-              setText(JSON.stringify(resp, undefined, 2))
-            }
-          )
-        })
+        await clientRef.current!.put(path, space, JSON.parse(value))
       } catch(error) {
-        // console.log(error)
       }
     },
-    [client]
+    [clientRef]
   )
 
   const onTextChange = useCallback(
@@ -81,17 +71,13 @@ export default function App() {
       setText(value)
       try {
         const data = JSON.parse(value)
-        client.delete("", space).then(
-          () => {
-            client.put("", space, data)
-          }
+        clientRef.current!.put("", space, data).then(
+          ()=>{setEntries(flattenJson(data))}
         )
-        setEntries(flattenJson(data))
       } catch (error) {
-        // console.log(error)
       }
     },
-    [client]
+    [clientRef]
   )
   return <div className="app">
     <div

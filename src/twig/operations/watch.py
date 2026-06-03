@@ -10,6 +10,7 @@ from fastapi import (
 from sqlmodel import Session
 
 from twig.db.connection import get_session
+from twig.models import JsonValue
 from twig.operations.login import websocket_auth
 
 
@@ -57,10 +58,18 @@ class WatchManager:
         self,
         space: str,
         path: str,
-        payload: dict,
+        action: str,
+        value: JsonValue | None = None,
     ) -> None:
         # deduplicated websocket targets
+        # print("publish", path, value)
         targets: dict[int, WebSocket] = {}
+        payload = {
+            "path":path,
+            "space":space,
+            "action":action,
+            "value":value,
+        }
 
         # root watchers
         targets.update(
@@ -135,13 +144,13 @@ async def watch_endpoint(
                     )
 
                     await websocket.send_json({
-                        "type": "subscribed",
+                        "action": "subscribed",
                         "path": path,
                         "space": space,
                     })
                 except Exception:
                     await websocket.send_json({
-                        "type": "rejected",
+                        "action": "rejected",
                         "space": space,
                         "path": path,
                         "reason": "unauthorized"
@@ -159,7 +168,7 @@ async def watch_endpoint(
                 )
 
                 await websocket.send_json({
-                    "type": "unsubscribed",
+                    "action": "unsubscribed",
                     "space": space,
                     "path": path,
                 })

@@ -5,7 +5,13 @@
   "devDependencies": {
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "eslint": "^9.7",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-unused-imports": "^4.4.1",
+    "jiti": "^2.7.0",
+    "jsonpointer": "^5.0.1",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.60.0",
     "vite": "^8.0.13",
     "vite-plugin-singlefile": "^2.3.3"
   },

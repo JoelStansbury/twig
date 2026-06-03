@@ -8,6 +8,7 @@ The primary goal is to make deeply nested data:
 - easy to query
 - easy to update
 - easy to observe in realtime
+- atomic change tracking (not implemented yet)
 
 
 ## Why?
@@ -86,6 +87,12 @@ This storage model enables:
 
 ### Realtime Subscriptions
 
+<video width="640" height="360" controls>
+  <source src="https://youtu.be/CYSsFLE-bE0" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
+
 Twig supports websocket subscriptions.
 
 Clients may subscribe to a path:
@@ -100,7 +107,7 @@ Results in a notification such as:
 
 ```json
 {
-  "type": "put",
+  "action": "update",
   "path": "/user/profile/name",
   "value": "Joel"
 }

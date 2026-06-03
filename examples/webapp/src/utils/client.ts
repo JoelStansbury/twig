@@ -1,4 +1,7 @@
-const SERVER_URL = "http://localhost:8000"
+import { DOMAIN } from "../constants"
+import { ChangeMessage } from "../types"
+
+const SERVER_URL = `http://${DOMAIN}`
 
 export default class APIClient {
     private token: string | undefined
@@ -82,5 +85,18 @@ export default class APIClient {
             }
         )
     }
+
+    createWatchSocket(onmessage:(message:ChangeMessage)=>void) {
+        const ws = new WebSocket(`ws://${DOMAIN}/watch?token=${this.token}`)
+
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data)
+            console.log(`WS: (${message.action}) [${message.space}]-${message.path}`, message.value)
+            onmessage(message)
+        }
+
+        return ws
+    }
+
 
 }

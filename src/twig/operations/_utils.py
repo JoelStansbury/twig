@@ -15,45 +15,49 @@ def escape(part:str):
     return part.replace("~", "~0").replace("/", "~1")
 
 async def _recursive_put(
-    obj: JsonValue, space: str, path: str, session: Session
+    obj: JsonValue, space: str, path: str, session: Session, collector: list[str] | None = None
 ):
-    if isinstance(obj, (int, str, float)) or obj is None:
-        value = json.dumps(obj)
+    collector = collector or []
+    collector.append(path)
+    if isinstance(obj, (int, str, float, bool)) or obj is None:
+        value = obj
+        await _do_put(value, space, path, session)
     elif isinstance(obj, list):
-        value = "[]"
+        value = []
+        await _do_put(value, space, path, session)
         for i, el in enumerate(obj):
-            await _recursive_put(el, space, f"{path}/{i}", session)
+            await _recursive_put(el, space, f"{path}/{i}", session, collector)
     else:
-        value = "{}"
+        value = {}
+        await _do_put(value, space, path, session)
         for k, v in obj.items():
-            await _recursive_put(v, space, f"{path}/{escape(k)}", session)
+            await _recursive_put(v, space, f"{path}/{escape(k)}", session, collector)
+    return collector
+
+async def _do_put(value, space, path, session):
+    json_value = json.dumps(value)
     if row:=session.get(Datum, (path, space)):
-        row.value = value
-        await watch_manager.publish(
-            path=path,
-            space=space,
-            payload={
-                "path": path,
-                "action": "update",
-                "value": obj,
-            }
-        )
+        if row.value != json_value:
+            row.value = json_value
+            await watch_manager.publish(
+                path=path,
+                space=space,
+                action="update",
+                value=value,
+            )
     else:
         session.add(
             Datum(
                 path=path,
                 space=space,
-                value=value,
+                value=json_value,
             )
         )
         await watch_manager.publish(
             path=path,
             space=space,
-            payload={
-                "path": path,
-                "action": "insert",
-                "value": obj,
-            }
+            action="insert",
+            value=value,
         )
 
 async def delete_datum(
@@ -78,11 +82,7 @@ async def delete_datum(
         await watch_manager.publish(
             path=path,
             space=space,
-            payload={
-                "path": path,
-                "action": "delete",
-                "value": None
-            }
+            action="delete",
         )
 
 def is_element_of_list(path: str, space:str, session: Session):

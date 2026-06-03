@@ -130,7 +130,7 @@ def test_watch_put(client):
         })
         message = ws.receive_json()
         assert message == {
-            "type": "subscribed",
+            "action": "subscribed",
             "path": "/settings",
             "space": TEST_SPACE['name'],
         }, message
@@ -147,4 +147,5 @@ def test_watch_put(client):
             "action": "insert",
             "path": "/settings/theme",
             "value": "dark",
+            "space": TEST_SPACE['name']
         }, message
