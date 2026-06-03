@@ -87,9 +87,8 @@ This storage model enables:
 
 ### Realtime Subscriptions
 
-[![Watch the video](https://youtu.be/CYSsFLE-bE0)](https://youtu.be/CYSsFLE-bE0)
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/CYSsFLE-bE0/0.jpg)](https://www.youtube.com/watch?v=CYSsFLE-bE0)
 
-<iframe width="560" height="315" src="https://youtu.be/CYSsFLE-bE0" frameborder="0" allowfullscreen></iframe>
 
 
 
