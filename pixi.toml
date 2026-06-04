@@ -42,6 +42,8 @@ psycopg2 = "*"
 # Python
 python = ">=3.14"
 pytest = "*"
+pytest-html = "*"
+pytest-cov = "*"
 mypy = "*"
 ruff = "*"
 # Server

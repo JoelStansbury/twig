@@ -9,3 +9,4 @@ db.log
 secret
 Untitled*.ipynb
 .ipynb_checkpoints
+.reports
