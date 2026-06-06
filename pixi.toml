@@ -31,6 +31,8 @@ cmd = "pytest"
 depends-on = ["gen-key", "create-test-db"]
 env = { DATABASE_URL="postgresql+psycopg2:///testdb" }
 
+[environments]
+default = ["dev"]
 
 [pypi-dependencies]
 twig = {path=".", editable = true}
@@ -41,11 +43,7 @@ postgresql = "*"
 psycopg2 = "*"
 # Python
 python = ">=3.14"
-pytest = "*"
-pytest-html = "*"
-pytest-cov = "*"
-mypy = "*"
-ruff = "*"
+jsonpointer = "*"
 # Server
 fastapi = "*"
 pydantic = "*"
@@ -55,3 +53,11 @@ uvicorn = "*"
 argon2-cffi = "*"
 pwdlib = "*"
 pyjwt = "*"
+
+[feature.dev.dependencies]
+pytest = "*"
+pytest-html = "*"
+pytest-cov = "*"
+mypy = "*"
+ruff = "*"
+types-psutil = "*"

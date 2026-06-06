@@ -5,7 +5,7 @@ _HERE = Path(__file__).parent
 _SRC = _HERE.parent
 ROOT = _SRC.parent
 
-PORT = os.environ.get("QR_SERVER_PORT", 8000)
+PORT = int(os.environ.get("QR_SERVER_PORT", 8000))
 """What port to host the server on... this must be port-forwarded in order to make it public"""
 
 DATABASE_PATH = ROOT / "database.db"

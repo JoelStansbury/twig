@@ -6,3 +6,8 @@ description = "Add a short description here"
 
 [tool.pytest]
 addopts=["--html", ".reports/pytest.html"]
+
+
+[[tool.mypy.overrides]]
+module = "jsonpointer.*"
+ignore_missing_imports = true

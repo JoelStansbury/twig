@@ -1,16 +1,16 @@
 from http import HTTPStatus
 import json
-from typing import Any
+from jsonpointer import JsonPointer # type:ignore
 
 from fastapi import Depends, HTTPException
-from sqlmodel import Session, asc, delete, select
+from sqlmodel import Session, and_, asc, delete, select
 
 from ..models import ApiQuery, JsonValue, Membership
 from ..db.connection import get_session
-from .watch import watch_manager
+from .watch import WEBSOCKET_MANAGER
 from ..db.tables import Datum
 from .login import AuthenticatedMember
-from ._utils import delete_datum, _recursive_put, is_element_of_list, unescape
+from ._utils import delete_datum, recursive_put, is_element_of_list
 
 async def api(
     membership: AuthenticatedMember,
@@ -28,24 +28,31 @@ def path_get(
     membership: AuthenticatedMember,
     path: str = "",
     session: Session = Depends(get_session),
-) -> Any:
-    if membership is None:
-        raise HTTPException(HTTPStatus.UNAUTHORIZED, detail="No membership status")
+) -> JsonValue:
     if membership.type < Membership.view:
         raise HTTPException(HTTPStatus.UNAUTHORIZED, detail="No read access")
 
-    result = session.exec(select(Datum.value).where(Datum.path == path, Datum.space == membership.space)).one_or_none()
-    if result is None:
-        result = "{}"
+    root_value = session.exec(
+        select(Datum.value)
+        .where(
+            Datum.path == path, 
+            Datum.space == membership.space
+        )
+    ).one_or_none()
+
+    list_paths: list[str] = []
+    if root_value == "[]":
+        list_paths.append(path)
+    elif (root_value is not None) and (root_value != "{}"):
+        return json.loads(root_value)
     
-    result = json.loads(result)
-    if not isinstance(result, (dict, list)):
-        return result
-    children_of_path = f"{path}/"
+    result: dict[str, JsonValue] = {}
+    descendent_prefix = f"{path}/"
+    
     statement = (
         select(Datum)
         .where(
-            Datum.path.startswith(children_of_path),
+            Datum.path.startswith(descendent_prefix),
             Datum.space == membership.space,
         )
         .order_by(asc(Datum.path))
@@ -58,30 +65,41 @@ def path_get(
         return json.loads(rows[0].value)
 
     for row in rows:
-        rel_path = row.path[len(path) + 1 :]
-        if rel_path:
-            cursor = result
-            parts = [unescape(part) for part in rel_path.split("/")]
+        cursor:dict[str, JsonValue] = result
+        value = json.loads(row.value)
+        if value == []:
+            value = {}
+            list_paths.append(row.path)
+
+        rel_path = row.path[len(path):]
+        ptr = JsonPointer(rel_path)
+        parts: list[str] = ptr.parts # type:ignore
+        assert isinstance(parts, list)
+        if len(parts) > 1:
             for part in parts[:-1]:
-                if isinstance(cursor, list):
-                    part = int(part)
-                if isinstance(cursor, dict) and part not in cursor:
+                if part not in cursor:
                     cursor[part] = {}
-                elif isinstance(cursor, list) and len(cursor) <= part:
-                    cursor.append({})
-                try:
-                    cursor = cursor[part]
-                except Exception as e:
-                    print(f"Error: index ({part}) of {cursor}")
-                    raise e
-            if isinstance(cursor, list):
-                assert int(parts[-1]) == len(cursor)
-                cursor.append(json.loads(row.value))
-            else:
-                cursor[parts[-1]] = json.loads(row.value)
-        else: # lists
-            assert not result, f"Object should have been empty due to sorting. {result}"
-            result = json.loads(row.value)
+                cursor = cursor[part] # type:ignore
+        cursor[parts[-1]] = value
+
+    # Post Process Lists
+    for _path in list_paths:
+        rel_path = _path[len(path):]
+        collector: list[JsonValue] = []
+        if rel_path == "":
+            kv_pairs: list[tuple[int, JsonValue]]= [(int(k), v) for k,v in result.items()]
+            for k,v in sorted(kv_pairs):
+                assert k == len(collector)
+                collector.append(v)
+            return collector
+        else:
+            ptr = JsonPointer(rel_path)
+            sparse: dict[str, JsonValue] = ptr.get(result, None) # type:ignore
+            kv_pairs = [(int(k), v) for k,v in sparse.items()]
+            for k,v in sorted(kv_pairs):
+                assert k == len(collector)
+                collector.append(v)
+            ptr.set(result, collector) # type:ignore
     return result
 
 async def path_put(
@@ -90,16 +108,15 @@ async def path_put(
     value: JsonValue,
     session: Session = Depends(get_session),
 ) -> None:
-    if membership is None:
-        raise HTTPException(HTTPStatus.UNAUTHORIZED)
     if membership.type < Membership.edit:
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
     
-    all_paths = set(session.exec(select(Datum.path).where(Datum.path.startswith(path))).all())
-    touched_paths = set(await _recursive_put(value, membership.space, path, session))
-    for orphaned_path in all_paths - touched_paths:
-        session.exec(delete(Datum).where(Datum.path == orphaned_path))
-        await watch_manager.publish(
+    all_paths = {x.path: x for x in session.exec(select(Datum).where(Datum.path.startswith(path))).all()}
+    
+    touched_paths = set(await recursive_put(value, membership.space, path, session, all_paths))
+    for orphaned_path in set(all_paths) - touched_paths:
+        session.exec(delete(Datum).where(and_(Datum.path==orphaned_path)))
+        await WEBSOCKET_MANAGER.publish(
             path=path,
             space=membership.space,
             action="delete",
@@ -111,8 +128,6 @@ async def path_delete(
     path: str, 
     session: Session = Depends(get_session)
 ) -> None:
-    if membership is None:
-        raise HTTPException(HTTPStatus.UNAUTHORIZED)
     if membership.type < Membership.edit:
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
     await delete_datum(membership.space, path, session)

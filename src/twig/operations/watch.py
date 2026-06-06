@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Mapping
+from typing import Any
 
 from fastapi import (
     APIRouter,
@@ -10,7 +10,7 @@ from fastapi import (
 from sqlmodel import Session
 
 from twig.db.connection import get_session
-from twig.models import JsonValue
+from twig.models import ApiQuery, JsonValue
 from twig.operations.login import websocket_auth
 
 
@@ -18,8 +18,8 @@ router = APIRouter()
 
 
 class WatchManager:
-    subscriptions: Mapping[tuple[str, str], dict[int, WebSocket]] = defaultdict(dict)
-    websockets: Mapping[int, set[tuple[str, str]]] = defaultdict(set)
+    subscriptions: dict[tuple[str, str], dict[int, WebSocket]] = defaultdict(dict)
+    websockets: dict[int, set[tuple[str, str]]] = defaultdict(set)
 
     def subscribe(
         self,
@@ -43,6 +43,7 @@ class WatchManager:
         if space is None and path is None:
             for space, path in self.websockets[ws_id]:
                 self.unsubscribe(websocket, path, space)
+            del self.websockets[ws_id]
         else:
             assert space is not None and path is not None
             key = (space, path)
@@ -64,7 +65,7 @@ class WatchManager:
         # deduplicated websocket targets
         # print("publish", path, value)
         targets: dict[int, WebSocket] = {}
-        payload = {
+        payload: dict[str, Any] = {
             "path":path,
             "space":space,
             "action":action,
@@ -96,8 +97,8 @@ class WatchManager:
             )
 
         # broadcast
-        dead = []
-        for ws_id, websocket in targets.items():
+        dead: list[WebSocket] = []
+        for websocket in targets.values():
             try:
                 await websocket.send_json(payload)
             except Exception:
@@ -105,9 +106,9 @@ class WatchManager:
 
         # cleanup dead sockets
         for websocket in dead:
-            await self.unsubscribe(websocket)
+            self.unsubscribe(websocket)
 
-watch_manager = WatchManager()
+WEBSOCKET_MANAGER = WatchManager()
 
 @router.websocket("/watch")
 async def watch_endpoint(
@@ -125,19 +126,17 @@ async def watch_endpoint(
     await websocket.accept()
     try:
         while True:
-            message = await websocket.receive_json()
+            message = ApiQuery.model_validate(await websocket.receive_json())
             assert isinstance(message, dict)
 
-            action = message.get(
-                "action"
-            )
+            action = message.action
 
             if action == "subscribe":
-                path = message.get("path","")
-                space = message["space"]
+                path = message.path
+                space = message.space
 
                 try:
-                    watch_manager.subscribe(
+                    WEBSOCKET_MANAGER.subscribe(
                         websocket=websocket,
                         space=space,
                         path=path,
@@ -159,9 +158,9 @@ async def watch_endpoint(
 
             elif action == "unsubscribe":
 
-                path = message.get("path")
-                space = message.get("space")
-                watch_manager.unsubscribe(
+                path = message.path
+                space = message.space
+                WEBSOCKET_MANAGER.unsubscribe(
                     websocket=websocket,
                     space=space,
                     path=path,
@@ -174,4 +173,4 @@ async def watch_endpoint(
                 })
 
     except WebSocketDisconnect:
-        watch_manager.unsubscribe(websocket)
+        WEBSOCKET_MANAGER.unsubscribe(websocket)

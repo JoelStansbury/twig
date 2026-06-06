@@ -1,9 +1,9 @@
 
 import json
 
-from sqlmodel import Session, delete, select
+from sqlmodel import Session, and_, delete, select
 
-from .watch import watch_manager
+from .watch import WEBSOCKET_MANAGER
 from ..db.tables import Datum
 from ..models import JsonValue
 
@@ -14,32 +14,36 @@ def unescape(part:str):
 def escape(part:str):
     return part.replace("~", "~0").replace("/", "~1")
 
-async def _recursive_put(
-    obj: JsonValue, space: str, path: str, session: Session, collector: list[str] | None = None
+async def recursive_put(
+    obj: JsonValue, 
+    space: str, 
+    path: str, 
+    session: Session,
+    existing_rows: dict[str, Datum],
+    collector: list[str] | None = None
 ):
     collector = collector or []
     collector.append(path)
     if isinstance(obj, (int, str, float, bool)) or obj is None:
         value = obj
-        await _do_put(value, space, path, session)
+        await _do_put(value, space, path, session, existing_rows)
     elif isinstance(obj, list):
-        value = []
-        await _do_put(value, space, path, session)
+        await _do_put([], space, path, session, existing_rows)
         for i, el in enumerate(obj):
-            await _recursive_put(el, space, f"{path}/{i}", session, collector)
+            await recursive_put(el, space, f"{path}/{i}", session, existing_rows, collector)
     else:
-        value = {}
-        await _do_put(value, space, path, session)
+        await _do_put({}, space, path, session, existing_rows)
         for k, v in obj.items():
-            await _recursive_put(v, space, f"{path}/{escape(k)}", session, collector)
+            await recursive_put(v, space, f"{path}/{escape(k)}", session, existing_rows, collector)
     return collector
 
-async def _do_put(value, space, path, session):
+async def _do_put(value:JsonValue, space:str, path:str, session:Session, existing_rows:dict[str, Datum]):
     json_value = json.dumps(value)
-    if row:=session.get(Datum, (path, space)):
+    if path in existing_rows:
+        row = existing_rows[path]
         if row.value != json_value:
             row.value = json_value
-            await watch_manager.publish(
+            await WEBSOCKET_MANAGER.publish(
                 path=path,
                 space=space,
                 action="update",
@@ -53,7 +57,7 @@ async def _do_put(value, space, path, session):
                 value=json_value,
             )
         )
-        await watch_manager.publish(
+        await WEBSOCKET_MANAGER.publish(
             path=path,
             space=space,
             action="insert",
@@ -61,7 +65,7 @@ async def _do_put(value, space, path, session):
         )
 
 async def delete_datum(
-    space: int, path: str, session: Session
+    space: str, path: str, session: Session
 ):
     statement = (
         select(Datum.path)
@@ -73,13 +77,14 @@ async def delete_datum(
     rows = session.exec(statement).all()
 
     session.exec(
-        delete(Datum).where(
+        delete(Datum)
+        .where(and_(
             Datum.path.startswith(path), 
-            Datum.space == space
-        )
+            Datum.space == space,
+        ))
     )
     for path in rows:
-        await watch_manager.publish(
+        await WEBSOCKET_MANAGER.publish(
             path=path,
             space=space,
             action="delete",

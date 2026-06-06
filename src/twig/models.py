@@ -7,8 +7,8 @@ from fastapi import Depends
 from .auth import oauth2_scheme
 
 TokenStr = Annotated[str, Depends(oauth2_scheme)]
-JsonValue = dict | list | str | int | float | bool | None
-ACTION = Literal["PUT", "GET", "DELETE"]
+type JsonValue = dict[str, JsonValue] | list[JsonValue] | str | int | float | bool | None
+ACTION = Literal["PUT", "GET", "DELETE", "subscribe", "unsubscribe"]
 
 class Token(BaseModel):
     access_token: TokenStr
@@ -30,4 +30,5 @@ class CreateSpaceQuery(BaseModel):
 class ApiQuery(BaseModel):
     action: ACTION
     path: str
+    space: str
     value: JsonValue = None

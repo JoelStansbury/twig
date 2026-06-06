@@ -1,16 +1,19 @@
 import time
 
+from twig.client import APIClient
+from starlette.testclient import WebSocketTestSession
+
 
 TEST_USER = {"username": "TestUser", "password": "password"}
 TEST_SPACE = {"name": "MySpace"}
 
-def test_deep_put_scaling(client):
+def test_deep_put_scaling(client: APIClient):
 
     client.signup(TEST_USER)
     client.authenticate(TEST_USER)
     client.create_space(TEST_SPACE)
 
-    def timed_put(depth):
+    def timed_put(depth:int):
 
         path = ""
 
@@ -47,21 +50,29 @@ def test_deep_put_scaling(client):
     assert deep < shallow * 20
 
 
-
-def test_get_large_subtree(client):
+def test_get_large_subtree(client: APIClient):
 
     client.signup(TEST_USER)
     client.authenticate(TEST_USER)
     client.create_space(TEST_SPACE)
 
     for N in [100, 500, 1000]:
-        for i in range(N):
-
-            client.put(
-                f"/users/{i}/name",
-                TEST_SPACE["name"],
-                f"user{i}",
-            )
+        # client.delete("", TEST_SPACE['name'])
+        users = {str(i):{"name": f"user{i}"} for i in range(N)}
+        start = time.perf_counter()
+        client.put(
+            "/users",
+            TEST_SPACE["name"],
+            users,
+        )
+        elapsed = (
+            time.perf_counter()
+            - start
+        )
+        print(
+            f"{N} node PUT:",
+            elapsed
+        )
 
         start = time.perf_counter()
 
@@ -83,13 +94,13 @@ def test_get_large_subtree(client):
         )
 
 
-def test_watch_publish_scaling(client):
+def test_watch_publish_scaling(client: APIClient):
 
     client.signup(TEST_USER)
     client.authenticate(TEST_USER)
     client.create_space(TEST_SPACE)
 
-    sockets = []
+    sockets: list[WebSocketTestSession] = []
 
     for i in range(100):
 

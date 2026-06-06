@@ -1,31 +1,30 @@
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Mapping
 
-from fastapi import Response
+from httpx import Response
 from fastapi.testclient import TestClient
 
 from .models import ACTION
 
-
 class APIClient:
-    def __init__(self, client):
+    def __init__(self, client: TestClient) -> None:
         self.client: TestClient = client
         self.token = None
 
-    def signup(self, user_data) -> Response:
+    def signup(self, user_data: Mapping[str, str]) -> Response:
         return self.client.post("/signup", data=user_data)
     
-    def authenticate(self, user_data) -> Response:
+    def authenticate(self, user_data: Mapping[str, str]) -> Response:
         response = self.client.post("/token", data=user_data)
         self.token = response.json().get('access_token')
         return response
 
-    def _get_headers(self) -> dict[str,str]:
+    def _get_headers(self) -> Mapping[str,str]:
         return {
             "Authorization": f"Bearer {self.token}"
         }
 
-    def create_space(self, space_data) -> Response:
+    def create_space(self, space_data: Mapping[str, str]) -> Response:
         return self.client.post(
             "/create", 
             headers=self._get_headers(),
@@ -43,13 +42,13 @@ class APIClient:
             }
         )
     
-    def put(self, path:str, space:str, value) -> Response:
+    def put(self, path:str, space:str, value: Any) -> Response:
         return self._api("PUT", path, space, value)
 
-    def delete(self, path, space) -> Response:
+    def delete(self, path:str, space:str) -> Response:
         return self._api("DELETE", path, space)
     
-    def get(self, path, space) -> Response:
+    def get(self, path:str, space:str) -> Response:
         return self._api("GET", path, space)
     
     @contextmanager

@@ -20,7 +20,7 @@ def user_get_current(token: TokenStr, session: Session = Depends(get_session)) -
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]) # type:ignore
         username = payload.get("sub")
         if username is None:
             raise credentials_exception
@@ -41,7 +41,9 @@ def user_login(
     session: Session = Depends(get_session),
 ) -> Token:
     command = select(User).where(User.username == form_data.username)
-    user = session.exec(command).first()
+    user: User | None = session.exec(command).one_or_none()
+    if user is None:
+        raise HTTPException(HTTPStatus.NOT_FOUND, detail="User not found")
     if verify_password(form_data.password, user.password_hash):
         access_token = create_access_token({"sub": user.username})
         return Token(access_token=access_token, token_type="bearer")
@@ -86,15 +88,18 @@ def get_membership(
     current_user: AuthenticatedUser,
     space: str,
     session: Session = Depends(get_session),
-) -> Membership:
-    return session.get(SpaceMembership, (current_user.username, space))
+) -> SpaceMembership:
+    membership = session.get(SpaceMembership, (current_user.username, space))
+    if membership is None:
+        raise HTTPException(HTTPStatus.UNAUTHORIZED, 'No membership status')
+    return membership
 
 AuthenticatedMember = Annotated[SpaceMembership, Depends(get_membership)]
 
 def websocket_auth(
     websocket: WebSocket,
     session: Session,
-) -> User:
+) -> User | None:
 
     token = websocket.query_params.get(
         "token"

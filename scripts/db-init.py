@@ -9,13 +9,13 @@ from subprocess import check_call, check_output, call, run
 import platform
 
 
-def running(process:str) -> list[str]:
+def running(process:str) -> bool:
     if platform.system() == "Windows":
         import psutil
-        return bool([
+        return len([
             p.info['pid'] for p in psutil.process_iter(attrs=['pid', 'name']) 
             if process in p.info['name']
-        ])
+        ]) > 0
     
     return int(run(["pgrep", "postgres", "-c"], text=True, capture_output=True).stdout)>0
 

@@ -2,7 +2,7 @@ from sqlmodel import Session, create_engine
 
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL") or "sqlite:///database.db"
 # DATABASE_URL = "sqlite:///database.db"
 # DATABASE_URL = "postgresql+psycopg2:///twig"
 
