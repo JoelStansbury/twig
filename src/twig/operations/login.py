@@ -85,16 +85,14 @@ def space_create_new(
     session.commit()
 
 def get_membership(
-    current_user: AuthenticatedUser,
+    current_user: User,
     space: str,
-    session: Session = Depends(get_session),
+    session: Session,
 ) -> SpaceMembership:
     membership = session.get(SpaceMembership, (current_user.username, space))
     if membership is None:
         raise HTTPException(HTTPStatus.UNAUTHORIZED, 'No membership status')
     return membership
-
-AuthenticatedMember = Annotated[SpaceMembership, Depends(get_membership)]
 
 def websocket_auth(
     websocket: WebSocket,

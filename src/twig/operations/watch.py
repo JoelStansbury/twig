@@ -127,8 +127,6 @@ async def watch_endpoint(
     try:
         while True:
             message = ApiQuery.model_validate(await websocket.receive_json())
-            assert isinstance(message, dict)
-
             action = message.action
 
             if action == "subscribe":

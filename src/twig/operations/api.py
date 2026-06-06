@@ -1,5 +1,6 @@
 from http import HTTPStatus
 import json
+from typing import Annotated
 from jsonpointer import JsonPointer # type:ignore
 
 from fastapi import Depends, HTTPException
@@ -8,15 +9,16 @@ from sqlmodel import Session, and_, asc, delete, select
 from ..models import ApiQuery, JsonValue, Membership
 from ..db.connection import get_session
 from .watch import WEBSOCKET_MANAGER
-from ..db.tables import Datum
-from .login import AuthenticatedMember
+from ..db.tables import Datum, SpaceMembership
+from .login import AuthenticatedUser, get_membership
 from ._utils import delete_datum, recursive_put, is_element_of_list
 
 async def api(
-    membership: AuthenticatedMember,
+    user: AuthenticatedUser,
     query: ApiQuery,
-    session: Session = Depends(get_session)
+    session: Annotated[Session, Depends(get_session)]
 ):
+    membership = get_membership(user, query.space, session)
     if query.action=="PUT":
         return await path_put(membership, query.path, query.value, session)
     elif query.action=="GET":
@@ -25,7 +27,7 @@ async def api(
         return await path_delete(membership, query.path, session)
 
 def path_get(
-    membership: AuthenticatedMember,
+    membership: SpaceMembership,
     path: str = "",
     session: Session = Depends(get_session),
 ) -> JsonValue:
@@ -103,7 +105,7 @@ def path_get(
     return result
 
 async def path_put(
-    membership: AuthenticatedMember,
+    membership: SpaceMembership,
     path: str,
     value: JsonValue,
     session: Session = Depends(get_session),
@@ -124,7 +126,7 @@ async def path_put(
     session.commit()
 
 async def path_delete(
-    membership: AuthenticatedMember, 
+    membership: SpaceMembership, 
     path: str, 
     session: Session = Depends(get_session)
 ) -> None:

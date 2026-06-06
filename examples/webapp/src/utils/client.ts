@@ -49,10 +49,10 @@ export default class APIClient {
     }
 
     async _api(action: "PUT" | "GET" | "DELETE", path:string, space:string, value: any = undefined): Promise<Response> {
-        const body = JSON.stringify({action, path, value:value});
+        const body = JSON.stringify({action, path, value:value, space});
         console.log(action, `"${path}"`, value)
         return await fetch(
-            `${SERVER_URL}/api?space=${space}`,
+            `${SERVER_URL}/api`,
             {
                 method:"POST",
                 headers: this.headers,

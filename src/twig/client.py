@@ -33,12 +33,13 @@ class APIClient:
 
     def _api(self, action:ACTION, path:str, space:str, value:Any = "") -> Response:
         return self.client.post(
-            f"/api?space={space}", 
-            headers=self._get_headers(), 
+            "/api", 
+            headers=self._get_headers(),
             json={
                 "action": action, 
                 "path": path,
-                "value": value
+                "value": value,
+                "space": space,
             }
         )
     
