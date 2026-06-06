@@ -3,12 +3,7 @@ Twig is an experimental document database designed around JSON Pointer paths.
 
 Unlike traditional document stores, Twig decomposes documents into primitive values and stores each value independently. Documents are reconstructed on demand when queried.
 
-The primary goal is to make deeply nested data:
-
-- easy to query
-- easy to update
-- easy to observe in realtime
-- atomic change tracking (not implemented yet)
+The primary goal is to offer granular change tracking to deeply nested data.
 
 
 ## Why?
