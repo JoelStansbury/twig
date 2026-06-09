@@ -23,8 +23,8 @@ def test_list_creation_2(client: APIClient) -> None:
     client.create_space(TEST_SPACE)
     client.put("", TEST_SPACE['name'], {"list": []})
     response = client.put("/list/1", TEST_SPACE['name'], "element_one")
-    assert response.status_code == HTTPStatus.NOT_MODIFIED
-    print(response)
+    assert response.status_code == HTTPStatus.EXPECTATION_FAILED
+    print(response.json()['detail'])
 
 
 def test_list_creation_3(client: APIClient) -> None:

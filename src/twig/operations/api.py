@@ -156,9 +156,10 @@ async def path_put(
                                 f"Integer index must be <= {len(neighbors)}\n"
                                 f"'-' may also be used if the total length of the list is unknown, this will append the operand."
                             )
+                        
                         # print(msg)
                         raise HTTPException(
-                            HTTPStatus.NOT_MODIFIED, 
+                            HTTPStatus.EXPECTATION_FAILED, 
                             detail=msg
                         )
                     # print("ACCEPTING", parts[i])
