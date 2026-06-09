@@ -113,9 +113,65 @@ async def path_put(
     if membership.type < Membership.edit:
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
     
-    all_paths = {x.path: x for x in session.exec(select(Datum).where(Datum.path.startswith(path))).all()}
     
+    # print(ancestors)
+    all_paths = {x.path: x for x in session.exec(
+        select(Datum)
+        .where(Datum.path.startswith(path))
+    ).all()}
+
+    # Get parents for info
+    ancestors: list[str] = []
+    parts:list[str] = list(path.split("/"))
+    for i in range(2, len(parts)):
+        parent = "/".join(parts[:i])
+        # obj = session.exec(select(Datum).where(Datum.path==parent)).one_or_none()
+        obj = session.get(Datum, (parent, membership.space))
+        if obj is not None:
+            ancestors.append("/".join(parts[:i]))
+            all_paths[parent] = obj
+            if obj.value == "[]":
+                query_result = session.exec(
+                    select(Datum.path)
+                    .where(
+                        and_(
+                            Datum.path.startswith(parent),
+                            Datum.path.regexp_match(f"^{parent}/\\d+$") # type:ignore
+                        )
+                    )
+                ).all()
+
+                neighbors = [int(x.removeprefix(f"{parent}/")) for x in query_result]
+                # print("NEIGHBORS", neighbors)
+                if parts[i] == "-":
+                    parts[i] = str(len(neighbors))
+                
+                else:
+                    if int(parts[i]) > len(neighbors):
+                        # print("REJECTING")
+                        msg = (
+                                "Attempt to insert an element beyond the end of a list. \n"
+                                f"{path}\n"
+                                f"{' '*len(parent)} ^\n"
+                                f"Integer index must be <= {len(neighbors)}\n"
+                                f"'-' may also be used if the total length of the list is unknown, this will append the operand."
+                            )
+                        # print(msg)
+                        raise HTTPException(
+                            HTTPStatus.NOT_MODIFIED, 
+                            detail=msg
+                        )
+                    # print("ACCEPTING", parts[i])
+
+    path = '/'.join(parts)
+    # Do insertions
     touched_paths = set(await recursive_put(value, membership.space, path, session, all_paths))
+
+    # Don't delete parents
+    for parent in ancestors:
+        all_paths.pop(parent)
+
+    # Prune
     for orphaned_path in set(all_paths) - touched_paths:
         session.exec(delete(Datum).where(and_(Datum.path==orphaned_path)))
         await WEBSOCKET_MANAGER.publish(
