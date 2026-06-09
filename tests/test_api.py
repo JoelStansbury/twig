@@ -8,23 +8,23 @@ from twig.client import APIClient
 TEST_USER = {"username": "TestUser", "password": "password"}
 TEST_SPACE = {"name": "MySpace"}
 
-def test_create_user(client: APIClient) -> None:
-    assert client.signup(TEST_USER).status_code == 200
-    assert client.signup(TEST_USER).status_code == 409
+def test_create_user(unconfigured_client: APIClient) -> None:
+    assert unconfigured_client.signup(TEST_USER).status_code == 200
+    assert unconfigured_client.signup(TEST_USER).status_code == 409
 
-def test_login(client: APIClient) -> None:
-    client.signup(TEST_USER)
-    response = client.authenticate(TEST_USER)
+def test_login(unconfigured_client: APIClient) -> None:
+    unconfigured_client.signup(TEST_USER)
+    response = unconfigured_client.authenticate(TEST_USER)
     assert response.status_code == 200
     assert "access_token" in response.json()
 
-def test_create_space(client: APIClient) -> None:
-    client.signup(TEST_USER)
-    client.authenticate(TEST_USER)
-    assert client.create_space(TEST_SPACE).status_code == 200
-    assert client.create_space(TEST_SPACE).status_code == 409
+def test_create_space(unconfigured_client: APIClient) -> None:
+    unconfigured_client.signup(TEST_USER)
+    unconfigured_client.authenticate(TEST_USER)
+    assert unconfigured_client.create_space(TEST_SPACE).status_code == 200
+    assert unconfigured_client.create_space(TEST_SPACE).status_code == 409
     
-def test_put(client: APIClient) -> None:
+def test_put(client: APIClient, test_space:str) -> None:
     """
     Tests the PUT endpoint functionality by 
     - signing up a user
@@ -32,14 +32,11 @@ def test_put(client: APIClient) -> None:
     - creating a space
     - and putting a data value within that space
     """
-    client.signup(TEST_USER)
-    client.authenticate(TEST_USER)
-    client.create_space(TEST_SPACE)
-    response = client.put("/path/to/my/datum", TEST_SPACE['name'], 500)
+    response = client.put("/path/to/my/datum", test_space, 500)
     if response.status_code != 200:
         assert False, response.__dict__
 
-def test_api_get(client: APIClient) -> None:
+def test_api_get(client: APIClient, test_space:str) -> None:
     """
     Tests the GET functionality of the API by verifying that
     data can be retrieved at different levels of granularity
@@ -50,91 +47,70 @@ def test_api_get(client: APIClient) -> None:
     3. created a space
     4. stored a value
     """
-    client.signup(TEST_USER)
-    client.authenticate(TEST_USER)
-    client.create_space(TEST_SPACE)
-    client.put("/path/to/my/datum~1", TEST_SPACE['name'], 500)
+    client.put("/path/to/my/datum~1", test_space, 500)
 
-    response = client.get("/path/to/my/datum~1", TEST_SPACE['name'])
+    response = client.get("/path/to/my/datum~1", test_space)
     assert response.json() == 500
 
-    response = client.get("/path/to", TEST_SPACE['name'])
+    response = client.get("/path/to", test_space)
     assert response.json()["my"]["datum/"] == 500
 
-    response = client.get("", TEST_SPACE['name'])
+    response = client.get("", test_space)
     assert response.json()["path"]["to"]["my"]["datum/"] == 500, response
 
-def test_delete(client: APIClient) -> None:
+def test_delete(client: APIClient, test_space:str) -> None:
     # 1. Setup: Authenticate
-    client.signup(TEST_USER)
-    client.authenticate(TEST_USER)
-    client.create_space(TEST_SPACE)
-    client.put("/path/to/delete/me", TEST_SPACE['name'], "temp")
-    response = client.delete("/path/to/delete/me", TEST_SPACE['name'])
+    client.put("/path/to/delete/me", test_space, "temp")
+    response = client.delete("/path/to/delete/me", test_space)
     assert response.status_code == 200
-    assert client.get("/path/to/delete/me", TEST_SPACE['name']).status_code == 404
+    assert client.get("/path/to/delete/me", test_space).status_code == 404
 
-def test_real_data(client: APIClient) -> None:
+def test_real_data(client: APIClient, test_space:str) -> None:
     filename = Path(__file__).parent/"fixtures/json/cofax.json"
     data = json.loads(filename.read_text())
-    client.signup(TEST_USER)
-    client.authenticate(TEST_USER)
-    client.create_space(TEST_SPACE)
-    client.put("", TEST_SPACE['name'], data)
-    response = client.get("", TEST_SPACE['name'])
+    client.put("", test_space, data)
+    response = client.get("", test_space)
     assert data == response.json()
-    assert client.get("/web-app/taglib/taglib-uri", TEST_SPACE['name']).json() == "cofax.tld"
-    assert client.get("/web-app/servlet/0/servlet-name", TEST_SPACE['name']).json() == "cofaxCDS"
+    assert client.get("/web-app/taglib/taglib-uri", test_space).json() == "cofax.tld"
+    assert client.get("/web-app/servlet/0/servlet-name", test_space).json() == "cofaxCDS"
 
 
-    response = client.get("/web-app/servlet", TEST_SPACE['name'])
+    response = client.get("/web-app/servlet", test_space)
     assert isinstance(response.json(), list)
 
-def test_read_access(client: APIClient) -> None:
-    user1 = TEST_USER
-    user2 = {'username': "SecondUser", "password":"password"}
-
-    client.signup(user1)
-    client.authenticate(user1)
-    client.create_space(TEST_SPACE)
-    client.put("/",TEST_SPACE['name'], "pass")
-    assert client.get("/",TEST_SPACE['name']).json() == "pass"
+def test_read_access(client: APIClient, test_space:str) -> None:
+    client.put("/",test_space, "pass")
+    assert client.get("/",test_space).json() == "pass"
     
+    user2 = {'username': "SecondUser", "password":"password"}
     client.signup(user2)
     client.authenticate(user2)
-    response = client.get("/",TEST_SPACE['name'])
+    response = client.get("/",test_space)
     assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.json() == {'detail': 'No membership status'}
 
-def test_list_deletion(client: APIClient) -> None:
-    client.signup(TEST_USER)
-    client.authenticate(TEST_USER)
-    client.create_space(TEST_SPACE)
-    client.put("/some_list", TEST_SPACE['name'], [1,2,3])
-    assert client.get(   "/some_list/0", TEST_SPACE['name']).json() == 1
-    assert client.delete("/some_list/0", TEST_SPACE['name']).status_code == 200
-    assert client.get(   "/some_list/0", TEST_SPACE['name']).json() == 2
-    assert client.delete("/some_list/0", TEST_SPACE['name']).status_code == 200
-    assert client.get(   "/some_list/0", TEST_SPACE['name']).json() == 3
-    assert client.delete("/some_list/0", TEST_SPACE['name']).status_code == 200
-    assert client.get(   "/some_list/0", TEST_SPACE['name']).status_code == HTTPStatus.NOT_FOUND
+def test_list_deletion(client: APIClient, test_space:str) -> None:
+    client.put("/some_list", test_space, [1,2,3])
+    assert client.get(   "/some_list/0", test_space).json() == 1
+    assert client.delete("/some_list/0", test_space).status_code == 200
+    assert client.get(   "/some_list/0", test_space).json() == 2
+    assert client.delete("/some_list/0", test_space).status_code == 200
+    assert client.get(   "/some_list/0", test_space).json() == 3
+    assert client.delete("/some_list/0", test_space).status_code == 200
+    assert client.get(   "/some_list/0", test_space).status_code == HTTPStatus.NOT_FOUND
 
-def test_watch_put(client: APIClient) -> None:
-    client.signup(TEST_USER)
-    client.authenticate(TEST_USER)
-    client.create_space(TEST_SPACE)
-
+def test_watch_put(client: APIClient, test_space:str) -> None:
     with client.websocket() as ws:
         ws.send_json({
             "action": "subscribe",
             "path": "/settings",
-            "space": TEST_SPACE['name']
+            "space": test_space
         })
         message = ws.receive_json()
         assert message == {
             "action": "subscribed",
             "path": "/settings",
-            "space": TEST_SPACE['name'],
+            "space": test_space,
         }, message
         response = client.put(
             "/settings/theme",
@@ -149,5 +125,5 @@ def test_watch_put(client: APIClient) -> None:
             "action": "insert",
             "path": "/settings/theme",
             "value": "dark",
-            "space": TEST_SPACE['name']
+            "space": test_space
         }, message

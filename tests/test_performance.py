@@ -9,10 +9,6 @@ TEST_SPACE = {"name": "MySpace"}
 
 def test_deep_put_scaling(client: APIClient):
 
-    client.signup(TEST_USER)
-    client.authenticate(TEST_USER)
-    client.create_space(TEST_SPACE)
-
     def timed_put(depth:int):
 
         path = ""
@@ -51,10 +47,6 @@ def test_deep_put_scaling(client: APIClient):
 
 
 def test_get_large_subtree(client: APIClient):
-
-    client.signup(TEST_USER)
-    client.authenticate(TEST_USER)
-    client.create_space(TEST_SPACE)
 
     for N in [100, 500, 1000]:
         # client.delete("", TEST_SPACE['name'])
@@ -95,10 +87,6 @@ def test_get_large_subtree(client: APIClient):
 
 
 def test_watch_publish_scaling(client: APIClient):
-
-    client.signup(TEST_USER)
-    client.authenticate(TEST_USER)
-    client.create_space(TEST_SPACE)
 
     sockets: list[WebSocketTestSession] = []
 
