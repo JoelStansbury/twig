@@ -6,12 +6,12 @@ from jsonpointer import JsonPointer # type:ignore
 from fastapi import Depends, HTTPException
 from sqlmodel import Session, and_, asc, delete, select
 
-from ..models import ApiQuery, JsonValue, Membership
+from ..models import ApiQuery, ChangeMessage, JsonValue, Membership
 from ..db.connection import get_session
 from .watch import WEBSOCKET_MANAGER
 from ..db.tables import Datum, SpaceMembership
 from .login import AuthenticatedUser, get_membership
-from ._utils import delete_datum, recursive_put, is_element_of_list
+from ._utils import delete_datum, get_ancestors, get_size_of_list, recursive_put, is_element_of_list
 
 async def api(
     user: AuthenticatedUser,
@@ -113,7 +113,6 @@ async def path_put(
     if membership.type < Membership.edit:
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
     
-    
     # print(ancestors)
     all_paths = {x.path: x for x in session.exec(
         select(Datum)
@@ -121,65 +120,66 @@ async def path_put(
     ).all()}
 
     # Get parents for info
-    ancestors: list[str] = []
-    parts:list[str] = list(path.split("/"))
-    for i in range(2, len(parts)):
-        parent = "/".join(parts[:i])
-        # obj = session.exec(select(Datum).where(Datum.path==parent)).one_or_none()
-        obj = session.get(Datum, (parent, membership.space))
-        if obj is not None:
-            ancestors.append("/".join(parts[:i]))
-            all_paths[parent] = obj
-            if obj.value == "[]":
-                query_result = session.exec(
-                    select(Datum.path)
-                    .where(
-                        and_(
-                            Datum.path.startswith(parent),
-                            Datum.path.regexp_match(f"^{parent}/\\d+$") # type:ignore
-                        )
-                    )
-                ).all()
+    for ancestor in get_ancestors(path, False, False):
+        obj = session.get(Datum, (ancestor, membership.space))
+        if obj is None:
+            msg = (
+                f"Cannot insert into undefined.\n"
+                f"{path}\n"
+                f"\"{ancestor}\" does not exist"
+            )
+            raise HTTPException(HTTPStatus.NOT_MODIFIED, detail=msg)
+        assert obj is not None
 
-                neighbors = [int(x.removeprefix(f"{parent}/")) for x in query_result]
-                # print("NEIGHBORS", neighbors)
-                if parts[i] == "-":
-                    parts[i] = str(len(neighbors))
-                
+    parts = path.split("/")
+    parent_path = "/".join(parts[:-1])
+    parent = session.get(Datum, (parent_path, membership.space))
+    if len(parts) > 2:
+        # ""      ->  1  (root has no parent)
+        # "/a"    ->  2  (root is not a list)
+        # "/a/b"  ->  3  (root may contain lists)
+        assert parent, f"{parent_path} is {parent}, and yet all of {get_ancestors(path, False, False)} exist ({path})"
+        if parent.value == "[]":
+            size = get_size_of_list(parent_path, membership.space, session)
+            if parts[-1] == "-":
+                parts[-1] = str(size)
+            elif parts[-1].isdigit():
+                n = int(parts[-1])
+                if n<=size:
+                    pass
                 else:
-                    if int(parts[i]) > len(neighbors):
-                        # print("REJECTING")
-                        msg = (
-                                "Attempt to insert an element beyond the end of a list. \n"
-                                f"{path}\n"
-                                f"{' '*len(parent)} ^\n"
-                                f"Integer index must be <= {len(neighbors)}\n"
-                                f"'-' may also be used if the total length of the list is unknown, this will append the operand."
-                            )
-                        
-                        # print(msg)
-                        raise HTTPException(
-                            HTTPStatus.EXPECTATION_FAILED, 
-                            detail=msg
+                    msg = (
+                            "Attempt to insert an element beyond the end of a list. \n"
+                            f"{path}\n"
+                            f"{' '*len(parent_path)} ^\n"
+                            f"Integer index must be <= {size}\n"
+                            f"'-' may also be used if the total length of the list is unknown, this will append the operand."
                         )
-                    # print("ACCEPTING", parts[i])
+                    raise HTTPException(HTTPStatus.NOT_MODIFIED, detail=msg)
+            else:
+                msg = (
+                        f"Only integers may be used to index a list (\"{parts[-1]}\" is not an integer). \n"
+                        f"{path}\n"
+                        f"{' '*len(parent_path)} ^\n"
+                        f"Integer index must be <= {size}\n"
+                        f"'-' may also be used if the total length of the list is unknown, this will append the operand."
+                    )
+                raise HTTPException(HTTPStatus.NOT_MODIFIED, detail=msg)
 
-    path = '/'.join(parts)
     # Do insertions
-    touched_paths = set(await recursive_put(value, membership.space, path, session, all_paths))
-
-    # Don't delete parents
-    for parent in ancestors:
-        all_paths.pop(parent)
-
+    messages = recursive_put(value, membership.space, path, session, all_paths)
+    touched_paths = set([m["path"] for m in messages])
+    print(messages)
     # Prune
     for orphaned_path in set(all_paths) - touched_paths:
         session.exec(delete(Datum).where(and_(Datum.path==orphaned_path)))
-        await WEBSOCKET_MANAGER.publish(
+        messages.append(ChangeMessage(
             path=path,
             space=membership.space,
             action="delete",
-        )
+            value=None
+        ))
+    await WEBSOCKET_MANAGER.publish(membership.space, path, messages)
     session.commit()
 
 async def path_delete(

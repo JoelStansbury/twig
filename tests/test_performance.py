@@ -1,5 +1,7 @@
 import time
 
+import pytest
+
 from twig.client import APIClient
 from starlette.testclient import WebSocketTestSession
 
@@ -86,6 +88,7 @@ def test_get_large_subtree(client: APIClient):
         )
 
 
+@pytest.mark.timeout(1)
 def test_watch_publish_scaling(client: APIClient):
 
     sockets: list[WebSocketTestSession] = []

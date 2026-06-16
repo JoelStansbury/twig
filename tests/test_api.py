@@ -3,6 +3,8 @@ from http import HTTPStatus
 import json
 from pathlib import Path
 
+import pytest
+
 from twig.client import APIClient
 
 TEST_USER = {"username": "TestUser", "password": "password"}
@@ -32,6 +34,9 @@ def test_put(client: APIClient, test_space:str) -> None:
     - creating a space
     - and putting a data value within that space
     """
+    response = client.put("/path", test_space, {})
+    response = client.put("/path/to", test_space, {})
+    response = client.put("/path/to/my", test_space, {})
     response = client.put("/path/to/my/datum", test_space, 500)
     if response.status_code != 200:
         assert False, response.__dict__
@@ -47,6 +52,7 @@ def test_api_get(client: APIClient, test_space:str) -> None:
     3. created a space
     4. stored a value
     """
+    client.put("", test_space, {"path":{"to":{"my":{"datum/":0}}}})
     client.put("/path/to/my/datum~1", test_space, 500)
 
     response = client.get("/path/to/my/datum~1", test_space)
@@ -99,31 +105,35 @@ def test_list_deletion(client: APIClient, test_space:str) -> None:
     assert client.delete("/some_list/0", test_space).status_code == 200
     assert client.get(   "/some_list/0", test_space).status_code == HTTPStatus.NOT_FOUND
 
+@pytest.mark.timeout(1)
 def test_watch_put(client: APIClient, test_space:str) -> None:
     with client.websocket() as ws:
         ws.send_json({
             "action": "subscribe",
-            "path": "/settings",
+            "path": "/settings/theme",
             "space": test_space
         })
         message = ws.receive_json()
         assert message == {
             "action": "subscribed",
-            "path": "/settings",
+            "path": "/settings/theme",
             "space": test_space,
         }, message
+
+        print("SUBSCRIBED /settings/theme")
         response = client.put(
-            "/settings/theme",
+            "",
             TEST_SPACE["name"],
-            "dark",
+            {"settings": {"theme": "dark"}},
         )
-
         assert response.status_code == HTTPStatus.OK
+        print("MODIFIED /settings/theme")
 
+        print("AWAITING SIGNAL")
         message = ws.receive_json()
-        assert message == {
+        assert message == [{
             "action": "insert",
             "path": "/settings/theme",
             "value": "dark",
             "space": test_space
-        }, message
+        }], message
