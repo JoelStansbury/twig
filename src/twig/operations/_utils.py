@@ -3,6 +3,8 @@ import json
 
 from sqlmodel import Session, and_, delete, select
 
+from twig.logger import LOG
+
 from ..db.tables import Datum
 from ..models import ChangeMessage, JsonValue
 
@@ -19,21 +21,23 @@ def recursive_put(
     path: str, 
     session: Session,
     existing_rows: dict[str, Datum],
-    collector: list[ChangeMessage] | None = None
-) -> list[ChangeMessage]:
-    collector = collector or []
+    change_messages: list[ChangeMessage] | None = None,
+    touched_paths: set[str] | None = None
+) -> tuple[set[str], list[ChangeMessage]]:
+    change_messages = [] if change_messages is None else change_messages
+    touched_paths = set() if touched_paths is None else touched_paths
+    touched_paths.add(path)
     if isinstance(obj, (int, str, float, bool)) or obj is None:
-        value = obj
-        _do_put(value, space, path, session, existing_rows, collector)
+        _do_put(obj, space, path, session, existing_rows, change_messages)
     elif isinstance(obj, list):
-        _do_put([], space, path, session, existing_rows, collector)
+        _do_put([], space, path, session, existing_rows, change_messages)
         for i, el in enumerate(obj):
-            recursive_put(el, space, f"{path}/{i}", session, existing_rows, collector)
+            recursive_put(el, space, f"{path}/{i}", session, existing_rows, change_messages, touched_paths)
     else:
-        _do_put({}, space, path, session, existing_rows, collector)
+        _do_put({}, space, path, session, existing_rows, change_messages)
         for k, v in obj.items():
-            recursive_put(v, space, f"{path}/{escape(k)}", session, existing_rows, collector)
-    return collector
+            recursive_put(v, space, f"{path}/{escape(k)}", session, existing_rows, change_messages, touched_paths)
+    return touched_paths, change_messages
 
 def _do_put(
         value:JsonValue, 
@@ -43,11 +47,13 @@ def _do_put(
         existing_rows:dict[str, Datum],
         changes: list[ChangeMessage],
     ) -> None:
+    
     json_value = json.dumps(value)
     if path in existing_rows:
         row = existing_rows[path]
         if row.value != json_value:
             row.value = json_value
+            LOG.PUT.debug(f'Update "{path}" {value}')
             changes.append(ChangeMessage(
                 path=path,
                 space=space,
@@ -62,6 +68,7 @@ def _do_put(
                 value=json_value,
             )
         )
+        LOG.PUT.debug(f'Insert "{path}" {value}')
         changes.append(ChangeMessage(
             path=path,
             space=space,
@@ -78,8 +85,11 @@ async def delete_datum(
             Datum.path.startswith(path),
             Datum.space == space,
         )
+        .order_by(
+            Datum.path
+        )
     )
-    rows = session.exec(statement).all()
+    rows = session.exec(statement).all()[::-1]
 
     session.exec(
         delete(Datum)

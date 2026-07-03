@@ -1,5 +1,4 @@
 from collections import defaultdict
-import json
 
 from fastapi import (
     APIRouter,
@@ -10,9 +9,11 @@ from fastapi import (
 from sqlmodel import Session
 
 from twig.db.connection import get_session
+from twig.logger import LOG
 from twig.models import WSQuery, ChangeMessage
 from twig.operations._utils import get_ancestors
 from twig.operations.login import websocket_auth
+
 
 
 router = APIRouter()
@@ -42,9 +43,9 @@ class WatchManager:
         space: str | None = None,
     ) -> None:
         """remove one subscription"""
-
         ws_id = id(websocket)
         if space is None and path is None:
+            LOG .WATCH.debug("deleting ws", ws_id)
             for space, path in self.reverse_subscriptions[ws_id]:
                 self.unsubscribe(websocket, path, space)
             del self.reverse_subscriptions[ws_id]
@@ -60,6 +61,7 @@ class WatchManager:
                     del self.subscriptions[key]
             return
     
+
     async def publish(
         self,
         space:str,
@@ -67,8 +69,9 @@ class WatchManager:
         payload: list[ChangeMessage]
     ) -> None:
         # deduplicated websocket targets
-        # print("publish", path, value)
+        # LOG.WATCH.debug("publish", path, value)
         dead: list[WebSocket] = []
+        LOG.WATCH.debug(f'"{path}" {payload}')
 
 
         # ancestor watchers
@@ -78,12 +81,14 @@ class WatchManager:
         # -> /a
         # -> /a/b
         # -> /a/b/c
+
+        full_listeners: set[int] = set()
         for ancestor in get_ancestors(path):
             for websocket in self.subscriptions.get((space, ancestor),{}).values():
+                full_listeners.add(id(websocket))
                 try:
-                    print(f"Found watcher for {ancestor}")
                     await websocket.send_json(payload)
-                except Exception:
+                except Exception as e:
                     dead.append(websocket)
         
         # partial watchers (something that watches a child of path)
@@ -92,6 +97,7 @@ class WatchManager:
         cursors: dict[int, str] = {}
         "Paths are sorted, so if one of the cursors does not start with the current path, then it is done"
         for i, message in sorted(enumerate(payload), key=lambda x: x[1]["path"]):
+            # if message["path"] not in full_listeners:
             for ws_id in self.subscriptions.get((space, message["path"]), {}):
                 cursors[ws_id] = message["path"]
             for ws_id, cpath in cursors.items():
@@ -100,14 +106,16 @@ class WatchManager:
                 else:
                     partials[ws_id].append(i)
         for ws_id, message_indicies in partials.items():
+            if ws_id in full_listeners:
+                continue
             partial_payload: list[ChangeMessage] = []
             websocket = self.websockets[ws_id]
             for i in sorted(message_indicies):
                 partial_payload.append(payload[i])
             try:
-                print(f"Found partial watcher, {json.dumps(partial_payload)}")
                 await websocket.send_json(partial_payload)
-            except Exception:
+            except Exception as e:
+                LOG.WATCH.debug("Dead Socket:", e)
                 dead.append(websocket)
         
         # cleanup dead sockets
@@ -132,7 +140,9 @@ async def watch_endpoint(
     await websocket.accept()
     try:
         while True:
-            message = WSQuery.model_validate(await websocket.receive_json())
+            msg = await websocket.receive_json()
+            # LOG.WATCH.debug("message recieved from client", msg)
+            message = WSQuery.model_validate(msg)
             action = message.action
 
             if action == "subscribe":
@@ -176,5 +186,6 @@ async def watch_endpoint(
                     "path": path,
                 })
 
-    except WebSocketDisconnect:
+    except WebSocketDisconnect as e:
+        LOG.WATCH.debug("Disconnect", e)
         WEBSOCKET_MANAGER.unsubscribe(websocket)

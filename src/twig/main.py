@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel
+import logging
 
 from twig.operations.api import api
 
@@ -12,6 +13,7 @@ from .operations import (
 )
 from .db.connection import engine
 
+logging.basicConfig(level=logging.DEBUG)
 
 SQLModel.metadata.create_all(engine, checkfirst=True)
 

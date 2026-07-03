@@ -5,7 +5,8 @@ from twig.client import APIClient
 
 def test_list_creation(client: APIClient, test_space:str) -> None:
     client.put("", test_space, {"list": []})
-    client.put("/list/0", test_space, "element_zero")
+    response = client.put("/list/0", test_space, "element_zero")
+    assert response.status_code == 200, response.json()
     response = client.get("/list", test_space)
     assert response.json() == ["element_zero"]
 
@@ -15,7 +16,7 @@ def test_list_creation_2(client: APIClient, test_space:str) -> None:
     """
     client.put("", test_space, {"list": []})
     response = client.put("/list/1", test_space, "element_one")
-    assert response.status_code == HTTPStatus.EXPECTATION_FAILED
+    assert response.status_code == HTTPStatus.PRECONDITION_FAILED
     print(response.json()['detail'])
 
 

@@ -1,55 +1,44 @@
-import { ChangeMessage } from "../types"
-import APIClient from "./client";
-import { getAncestorPaths } from "./pointer_utils"
+import { IDataClient, ChangeMessage, WatchHandle } from "./client/types";
+import { getAncestorPaths, makeAncestors } from "./pointer_utils"
 import JsonPointer from "jsonpointer";
 
 export default class TwigStore {
-    private client: APIClient
-    private websocket?: WebSocket
+    private client: IDataClient
+    private space: string
+    private websocket?: WatchHandle
     private listeners = new Map<string,Set<(msg:any)=>void>>()
-    data = new Map<string, any>()
+    data: Record<string, any> = {}
 
-    constructor(client: APIClient) {
+    constructor(client: IDataClient, space: string) {
         this.client = client
+        this.space = space
     }
 
     async connect() {
-        this.websocket = this.client.createWatchSocket(this.dispatch.bind(this))
-        return new Promise(
-            (resolve, reject) => {
-                this.websocket!.onopen = () => {
-                    resolve(this.websocket)
-                }
-            }
-        )
+        this.websocket = await this.client.createWatchSocket(this.dispatch.bind(this))
     }
 
 
-    async subscribe(path: string, space: string, callback: (msg:ChangeMessage)=>void) {
-        if (!this.listeners.has(`${space}-${path}`)) {
-
-            this.listeners.set(`${space}-${path}`, new Set([callback]))
-            this.websocket?.send(
-                JSON.stringify({
-                    action: "subscribe",
-                    path,
-                    space
-                })
-            )
-            await this.client.get(path, space).then(
+    async subscribe(path: string, callback: (value:any)=>void) {
+        
+        if (!this.listeners.has(path)) {
+            this.listeners.set(path, new Set([callback]))
+            this.websocket?.subscribe(this.space, path)
+            await this.client.get(path, this.space).then(
                 (value: any) => {
-                    this.data.set(`${space}-${path}`, value)
+                    makeAncestors(this.data, path)
+                    this.data[path] = value
                     callback(value)
                 }
             )
         } else {
-            this.listeners.get(`${space}-${path}`)!.add(callback)
-            callback(this.data.get(`${space}-${path}`))
+            this.listeners.get(path)!.add(callback)
+            callback(this.data[path])
         }
     }
 
-    unsubscribe(path: string, space: string, callback: (msg:ChangeMessage)=>void) {
-        const listeners = this.listeners.get(`${space}-${path}`)
+    unsubscribe(path: string, callback: (msg:ChangeMessage)=>void) {
+        const listeners = this.listeners.get(path)
 
         if (!listeners) {
             return
@@ -59,66 +48,100 @@ export default class TwigStore {
 
         if (listeners.size === 0) {
 
-            this.listeners.delete(`${space}-${path}`)
-            this.data.delete(`${space}-${path}`)
+            this.listeners.delete(path)
+            this.data.delete(path)
 
-            this.websocket?.send(
-                JSON.stringify({
-                    action: "unsubscribe",
-                    path,
-                })
-            )
+            this.websocket?.unsubscribe(this.space, path)
 
         }
 
     }
 
-    notify(space: string, path:string, value: any) {
+    notify(path:string) {
         const ancestors = getAncestorPaths(path)
         for (const parent of ancestors) {
-            const callbacks = this.listeners.get(`${space}-${parent}`)
+            const callbacks = this.listeners.get(parent)
 
             if (!callbacks) {
                 continue
             }
 
-            const parentValue = this.data.get(`${space}-${parent}`)
-
-            const rel_path = path.replace(parent, "")
-            if (rel_path) {
-                JsonPointer.set(
-                    parentValue, 
-                    rel_path, 
-                    value
-                )
-            } else {
-                this.data.set(`${space}-${path}`, value)
-            }
+            const parentValue = this.data[parent]
 
             for (const cb of callbacks) {
+                console.log(this.data, this.listeners)
+                console.log("NOTIFY", parent, parentValue)
                 cb(parentValue)
             }
         }
     }
 
-    dispatch(msg: ChangeMessage) {
-        const {path, space, value} = msg
-        const currentValue = this.data.get(`${space}-${path}`)
-        if (msg.action === "unsubscribed" ) {return}
-        if (msg.action === "subscribed" ) {return}
-        if (msg.action === "rejected" ) {return}
-        // NOTE: This requires notifications to be received in the correct order, 
-        // which probably can not be garunteed
-
-        if (Array.isArray(value) && Array.isArray(currentValue)) {return}
-        if (typeof value === "object" && typeof currentValue === "object" && currentValue !== null) {return}
-        if (currentValue === value) {return}
-
-
-        if (msg.action === "delete") {
-            this.notify(space, path, undefined)
-        } else {
-            this.notify(space, path, value)
+    dispatch(messeges: ChangeMessage[] | ChangeMessage) {
+        if (!Array.isArray(messeges)) {
+            return
         }
+        const notifications: Set<string> = new Set()
+        for (const msg of messeges) {
+            this._dispatch(msg).forEach((path) => {notifications.add(path)})
+        }
+        for (const path of notifications) {
+            this.notify(path)
+        }
+    }
+
+    _delete(path:string) {
+        console.log("DELETE", path)
+        if (this.data[path] !== undefined) {
+            delete this.data[path]
+        }
+
+        const ancestors = getAncestorPaths(path)
+        const parts = path.split("/")
+        const leaf = parts[parts.length-1]
+        const parentPath = parts.slice(0,-1).join("/")
+        for (const ancestor of ancestors) {
+            const ancestorData = this.data[ancestor]
+            if (ancestorData === undefined) {
+                continue
+            }
+            const rel_parentPath = parentPath.replace(ancestor, "")
+            console.log("Deleting", leaf, "from", ancestorData)
+            delete JsonPointer.get(ancestorData, rel_parentPath)[leaf]
+        }
+    }
+    _set(path:string, value:any) {
+        if (this.data[path] !== undefined) {
+            delete this.data[path]
+        }
+
+        const ancestors = getAncestorPaths(path)
+        for (const ancestor of ancestors) {
+            const ancestorData = this.data[ancestor]
+            if (ancestorData === undefined) {
+                continue
+            }
+            const rel_path = path.replace(ancestor, "")
+            JsonPointer.set(ancestorData, rel_path, value)
+        }
+    }
+
+    _dispatch(msg: ChangeMessage): Set<string> {
+        const {path, value} = msg
+        const currentValue = this.data[path]
+        const notifications: Set<string> = new Set()
+        if (msg.action === "unsubscribed" ) {return notifications}
+        if (msg.action === "subscribed" ) {return notifications}
+        if (msg.action === "rejected" ) {return notifications}
+        if (msg.action === "delete") {
+            this._delete(path)
+            notifications.add(path)
+        } else {
+            if (Array.isArray(value) && Array.isArray(currentValue)) {return notifications}
+            if (typeof value === "object" && typeof currentValue === "object" && currentValue !== null) {return notifications}
+            if (currentValue === value) {return notifications}
+        }
+        this._set(path, msg.value)
+        notifications.add(path)
+        return notifications
     }
 }

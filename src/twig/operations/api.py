@@ -4,7 +4,9 @@ from typing import Annotated
 from jsonpointer import JsonPointer # type:ignore
 
 from fastapi import Depends, HTTPException
-from sqlmodel import Session, and_, asc, delete, select
+from sqlmodel import Session, asc, select
+
+from twig.logger import LOG
 
 from ..models import ApiQuery, ChangeMessage, JsonValue, Membership
 from ..db.connection import get_session
@@ -12,6 +14,7 @@ from .watch import WEBSOCKET_MANAGER
 from ..db.tables import Datum, SpaceMembership
 from .login import AuthenticatedUser, get_membership
 from ._utils import delete_datum, get_ancestors, get_size_of_list, recursive_put, is_element_of_list
+
 
 async def api(
     user: AuthenticatedUser,
@@ -28,33 +31,31 @@ async def api(
 
 def path_get(
     membership: SpaceMembership,
-    path: str = "",
+    path: str,
     session: Session = Depends(get_session),
 ) -> JsonValue:
     if membership.type < Membership.view:
         raise HTTPException(HTTPStatus.UNAUTHORIZED, detail="No read access")
 
-    root_value = session.exec(
-        select(Datum.value)
-        .where(
-            Datum.path == path, 
-            Datum.space == membership.space
-        )
-    ).one_or_none()
+    root_datum = session.get(Datum, (path, membership.space))
+    if root_datum == None:
+        LOG.GET.debug(path)
+        raise HTTPException(HTTPStatus.NOT_FOUND, f"No entry for {path}")
+    root_value = root_datum.value
 
-    list_paths: list[str] = []
+    convert_to_list: list[str] = []
+    root: dict[str, JsonValue] = {}  # assume everything is a dict at first... jsonpointer cannot insert elements out of order
     if root_value == "[]":
-        list_paths.append(path)
-    elif (root_value is not None) and (root_value != "{}"):
+        convert_to_list.append("")
+    elif root_value == "{}":
+        pass
+    else:
         return json.loads(root_value)
-    
-    result: dict[str, JsonValue] = {}
-    descendent_prefix = f"{path}/"
-    
+
     statement = (
         select(Datum)
         .where(
-            Datum.path.startswith(descendent_prefix),
+            Datum.path.startswith(f"{path}/"),
             Datum.space == membership.space,
         )
         .order_by(asc(Datum.path))
@@ -62,47 +63,37 @@ def path_get(
 
     rows = session.exec(statement).all()
     if len(rows) == 0:
-        raise HTTPException(HTTPStatus.NOT_FOUND)
-    if len(rows) == 1 and rows[0].path == path:
-        return json.loads(rows[0].value)
+        return json.loads(root_value)
 
     for row in rows:
-        cursor:dict[str, JsonValue] = result
-        value = json.loads(row.value)
-        if value == []:
+        if row.value == "[]":
             value = {}
-            list_paths.append(row.path)
+            convert_to_list.append(row.path)
+        else:
+            value = json.loads(row.value)
 
         rel_path = row.path[len(path):]
-        ptr = JsonPointer(rel_path)
-        parts: list[str] = ptr.parts # type:ignore
-        assert isinstance(parts, list)
-        if len(parts) > 1:
-            for part in parts[:-1]:
-                if part not in cursor:
-                    cursor[part] = {}
-                cursor = cursor[part] # type:ignore
-        cursor[parts[-1]] = value
+        JsonPointer(rel_path).set(root, value) # type:ignore
 
     # Post Process Lists
-    for _path in list_paths:
+    for _path in convert_to_list:
         rel_path = _path[len(path):]
         collector: list[JsonValue] = []
         if rel_path == "":
-            kv_pairs: list[tuple[int, JsonValue]]= [(int(k), v) for k,v in result.items()]
+            kv_pairs: list[tuple[int, JsonValue]]= [(int(k), v) for k,v in root.items()]
             for k,v in sorted(kv_pairs):
                 assert k == len(collector)
                 collector.append(v)
             return collector
         else:
             ptr = JsonPointer(rel_path)
-            sparse: dict[str, JsonValue] = ptr.get(result, None) # type:ignore
+            sparse: dict[str, JsonValue] = ptr.get(root, None) # type:ignore
             kv_pairs = [(int(k), v) for k,v in sparse.items()]
             for k,v in sorted(kv_pairs):
                 assert k == len(collector)
                 collector.append(v)
-            ptr.set(result, collector) # type:ignore
-    return result
+            ptr.set(root, collector) # type:ignore
+    return root
 
 async def path_put(
     membership: SpaceMembership,
@@ -110,30 +101,26 @@ async def path_put(
     value: JsonValue,
     session: Session = Depends(get_session),
 ) -> None:
+    LOG.PUT.info(f'PROCESSING path="{path}" value={value}')
     if membership.type < Membership.edit:
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
     
-    # print(ancestors)
+
     all_paths = {x.path: x for x in session.exec(
         select(Datum)
         .where(Datum.path.startswith(path))
     ).all()}
 
-    # Get parents for info
-    for ancestor in get_ancestors(path, False, False):
-        obj = session.get(Datum, (ancestor, membership.space))
-        if obj is None:
-            msg = (
-                f"Cannot insert into undefined.\n"
-                f"{path}\n"
-                f"\"{ancestor}\" does not exist"
-            )
-            raise HTTPException(HTTPStatus.NOT_MODIFIED, detail=msg)
-        assert obj is not None
-
     parts = path.split("/")
     parent_path = "/".join(parts[:-1])
     parent = session.get(Datum, (parent_path, membership.space))
+    if path and parent is None:
+        msg = (
+            f"Cannot insert into undefined.\n"
+            f"{path}\n"
+            f"\"{parent_path}\" does not exist"
+        )
+        raise HTTPException(HTTPStatus.PRECONDITION_FAILED, detail=msg)
     if len(parts) > 2:
         # ""      ->  1  (root has no parent)
         # "/a"    ->  2  (root is not a list)
@@ -143,6 +130,7 @@ async def path_put(
             size = get_size_of_list(parent_path, membership.space, session)
             if parts[-1] == "-":
                 parts[-1] = str(size)
+                path = "/".join(parts)
             elif parts[-1].isdigit():
                 n = int(parts[-1])
                 if n<=size:
@@ -155,7 +143,7 @@ async def path_put(
                             f"Integer index must be <= {size}\n"
                             f"'-' may also be used if the total length of the list is unknown, this will append the operand."
                         )
-                    raise HTTPException(HTTPStatus.NOT_MODIFIED, detail=msg)
+                    raise HTTPException(HTTPStatus.PRECONDITION_FAILED, detail=msg)
             else:
                 msg = (
                         f"Only integers may be used to index a list (\"{parts[-1]}\" is not an integer). \n"
@@ -164,23 +152,24 @@ async def path_put(
                         f"Integer index must be <= {size}\n"
                         f"'-' may also be used if the total length of the list is unknown, this will append the operand."
                     )
-                raise HTTPException(HTTPStatus.NOT_MODIFIED, detail=msg)
+                raise HTTPException(HTTPStatus.PRECONDITION_FAILED, detail=msg)
 
     # Do insertions
-    messages = recursive_put(value, membership.space, path, session, all_paths)
-    touched_paths = set([m["path"] for m in messages])
-    print(messages)
+    touched_paths, messages = recursive_put(value, membership.space, path, session, all_paths)
+
     # Prune
     for orphaned_path in set(all_paths) - touched_paths:
-        session.exec(delete(Datum).where(and_(Datum.path==orphaned_path)))
+        LOG.PUT.debug(f'DELETING "{orphaned_path}"')
+        obj = session.get(Datum, (orphaned_path, membership.space))
+        session.delete(obj)
         messages.append(ChangeMessage(
-            path=path,
+            path=orphaned_path,
             space=membership.space,
             action="delete",
             value=None
         ))
-    await WEBSOCKET_MANAGER.publish(membership.space, path, messages)
     session.commit()
+    await WEBSOCKET_MANAGER.publish(membership.space, path, messages)
 
 async def path_delete(
     membership: SpaceMembership, 
@@ -189,7 +178,8 @@ async def path_delete(
 ) -> None:
     if membership.type < Membership.edit:
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
-    await delete_datum(membership.space, path, session)
+    changes = await delete_datum(membership.space, path, session)
+    await WEBSOCKET_MANAGER.publish(membership.space, path, changes)
     if is_element_of_list(path, membership.space, session):
         parent_path, child_idx_str = path.rsplit('/', 1)
         i = int(child_idx_str)

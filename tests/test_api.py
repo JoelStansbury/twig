@@ -2,6 +2,7 @@
 from http import HTTPStatus
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -34,9 +35,8 @@ def test_put(client: APIClient, test_space:str) -> None:
     - creating a space
     - and putting a data value within that space
     """
-    response = client.put("/path", test_space, {})
-    response = client.put("/path/to", test_space, {})
-    response = client.put("/path/to/my", test_space, {})
+    response = client.put("", test_space, {"path": {"to": {"my": {"datum":{}}}}})
+    assert response.status_code == 200
     response = client.put("/path/to/my/datum", test_space, 500)
     if response.status_code != 200:
         assert False, response.__dict__
@@ -85,6 +85,7 @@ def test_real_data(client: APIClient, test_space:str) -> None:
     assert isinstance(response.json(), list)
 
 def test_read_access(client: APIClient, test_space:str) -> None:
+    client.put("",test_space, {})
     client.put("/",test_space, "pass")
     assert client.get("/",test_space).json() == "pass"
     
@@ -96,6 +97,7 @@ def test_read_access(client: APIClient, test_space:str) -> None:
     assert response.json() == {'detail': 'No membership status'}
 
 def test_list_deletion(client: APIClient, test_space:str) -> None:
+    client.put("",test_space, {})
     client.put("/some_list", test_space, [1,2,3])
     assert client.get(   "/some_list/0", test_space).json() == 1
     assert client.delete("/some_list/0", test_space).status_code == 200
@@ -120,16 +122,9 @@ def test_watch_put(client: APIClient, test_space:str) -> None:
             "space": test_space,
         }, message
 
-        print("SUBSCRIBED /settings/theme")
-        response = client.put(
-            "",
-            TEST_SPACE["name"],
-            {"settings": {"theme": "dark"}},
-        )
+        response = client.put("",test_space,{"settings": {"theme": "dark"}},)
         assert response.status_code == HTTPStatus.OK
-        print("MODIFIED /settings/theme")
 
-        print("AWAITING SIGNAL")
         message = ws.receive_json()
         assert message == [{
             "action": "insert",
@@ -137,3 +132,40 @@ def test_watch_put(client: APIClient, test_space:str) -> None:
             "value": "dark",
             "space": test_space
         }], message
+
+
+@pytest.mark.timeout(1)
+def test_watch_order_of_delete_messages(client: APIClient, test_space:str) -> None:
+    with client.websocket() as ws:
+        ws.send_json({
+            "action": "subscribe",
+            "path": "",
+            "space": test_space
+        })
+        message = ws.receive_json()
+        response = client.put("",test_space,{"settings": {"theme": "dark"}})
+        assert response.status_code == HTTPStatus.OK
+
+        base = {"action": "insert", "space": test_space}
+        expect: list[dict[str, Any]] = [
+            {**base, "path": "", "value": {}},
+            {**base, "path": "/settings", "value": {}},
+            {**base, "path": "/settings/theme", "value": "dark"},
+        ]
+
+        message = ws.receive_json(mode="text")
+        assert message == expect, message
+
+        response = client.delete("",test_space)
+        base:dict[str, Any] = {"action": "delete", "space": test_space, "value": None}
+        expect: list[dict[str, Any]] = [
+            {**base, "path": "/settings/theme"},
+            {**base, "path": "/settings"},
+            {**base, "path": ""},
+        ]
+
+        message = ws.receive_json(mode="text")
+        for msg in message:
+            print(msg)
+        assert message == expect, message
+
