@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from typing import Any, Literal, Mapping
 
-from httpx import Response
+from httpx2 import Response
 from fastapi.testclient import TestClient
 
 class APIClient:

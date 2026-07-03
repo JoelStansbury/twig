@@ -1,5 +1,6 @@
 
 import json
+from typing import Any
 
 from sqlmodel import Session, and_, delete, select
 
@@ -8,7 +9,27 @@ from twig.logger import LOG
 from ..db.tables import Datum
 from ..models import ChangeMessage, JsonValue
 
-
+def pointer_put(obj: JsonValue, path:str, value:JsonValue):
+    if not isinstance(obj, dict):
+        err = f"Attempted to put into a non-object {obj}"
+        LOG.PUT.error(err)
+        raise ValueError(err)
+    
+    LOG.PUT.debug(f"POINTER_PUT {obj} {path}")
+    parts = [unescape(part) for part in path.split("/")]
+    cursor: dict[str, Any] = obj
+    for part in parts[1:-1]:
+        if part not in cursor:
+            cursor[part] = {}
+        else:
+            if not isinstance(cursor[part], dict):
+                err = f"Attempted to put into a non-object {obj}"
+                LOG.PUT.error(err)
+                raise ValueError(err)
+        cursor = cursor[part]
+    cursor[parts[-1]] = value
+    LOG.PUT.debug(f"POINTER_PUT -> {obj}")
+    
 def unescape(part:str):
     return part.replace("~1", "/").replace("~0", "~")
 
@@ -27,14 +48,9 @@ def recursive_put(
     change_messages = [] if change_messages is None else change_messages
     touched_paths = set() if touched_paths is None else touched_paths
     touched_paths.add(path)
-    if isinstance(obj, (int, str, float, bool)) or obj is None:
+    if isinstance(obj, (int, str, float, bool, list)) or obj is None:
         _do_put(obj, space, path, session, existing_rows, change_messages)
-    elif isinstance(obj, list):
-        _do_put([], space, path, session, existing_rows, change_messages)
-        for i, el in enumerate(obj):
-            recursive_put(el, space, f"{path}/{i}", session, existing_rows, change_messages, touched_paths)
     else:
-        _do_put({}, space, path, session, existing_rows, change_messages)
         for k, v in obj.items():
             recursive_put(v, space, f"{path}/{escape(k)}", session, existing_rows, change_messages, touched_paths)
     return touched_paths, change_messages
@@ -52,15 +68,18 @@ def _do_put(
     if path in existing_rows:
         row = existing_rows[path]
         if row.value != json_value:
-            row.value = json_value
             LOG.PUT.debug(f'Update "{path}" {value}')
+            row.value = json_value
             changes.append(ChangeMessage(
                 path=path,
                 space=space,
                 action="update",
                 value=value,
             ))
+        else:
+            LOG.PUT.debug(f'NOOP "{path}"')
     else:
+        LOG.PUT.debug(f'Insert "{path}" {value}')
         session.add(
             Datum(
                 path=path,
@@ -68,7 +87,6 @@ def _do_put(
                 value=json_value,
             )
         )
-        LOG.PUT.debug(f'Insert "{path}" {value}')
         changes.append(ChangeMessage(
             path=path,
             space=space,

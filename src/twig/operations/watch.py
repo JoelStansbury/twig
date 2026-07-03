@@ -45,7 +45,7 @@ class WatchManager:
         """remove one subscription"""
         ws_id = id(websocket)
         if space is None and path is None:
-            LOG .WATCH.debug("deleting ws", ws_id)
+            LOG .WATCH.debug(f"deleting ws {ws_id}")
             for space, path in self.reverse_subscriptions[ws_id]:
                 self.unsubscribe(websocket, path, space)
             del self.reverse_subscriptions[ws_id]
@@ -68,19 +68,8 @@ class WatchManager:
         path:str,
         payload: list[ChangeMessage]
     ) -> None:
-        # deduplicated websocket targets
-        # LOG.WATCH.debug("publish", path, value)
         dead: list[WebSocket] = []
         LOG.WATCH.debug(f'"{path}" {payload}')
-
-
-        # ancestor watchers
-        #
-        # /a/b/c
-        # -> *root*
-        # -> /a
-        # -> /a/b
-        # -> /a/b/c
 
         full_listeners: set[int] = set()
         for ancestor in get_ancestors(path):
@@ -115,7 +104,7 @@ class WatchManager:
             try:
                 await websocket.send_json(partial_payload)
             except Exception as e:
-                LOG.WATCH.debug("Dead Socket:", e)
+                LOG.WATCH.debug(f"Dead Socket: {e}")
                 dead.append(websocket)
         
         # cleanup dead sockets
@@ -141,7 +130,6 @@ async def watch_endpoint(
     try:
         while True:
             msg = await websocket.receive_json()
-            # LOG.WATCH.debug("message recieved from client", msg)
             message = WSQuery.model_validate(msg)
             action = message.action
 
@@ -187,5 +175,5 @@ async def watch_endpoint(
                 })
 
     except WebSocketDisconnect as e:
-        LOG.WATCH.debug("Disconnect", e)
+        LOG.WATCH.debug(f"Disconnect {e}")
         WEBSOCKET_MANAGER.unsubscribe(websocket)

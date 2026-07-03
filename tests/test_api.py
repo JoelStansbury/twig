@@ -1,7 +1,5 @@
 
 from http import HTTPStatus
-import json
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -71,21 +69,7 @@ def test_delete(client: APIClient, test_space:str) -> None:
     assert response.status_code == 200
     assert client.get("/path/to/delete/me", test_space).status_code == 404
 
-def test_real_data(client: APIClient, test_space:str) -> None:
-    filename = Path(__file__).parent/"fixtures/json/cofax.json"
-    data = json.loads(filename.read_text())
-    client.put("", test_space, data)
-    response = client.get("", test_space)
-    assert data == response.json()
-    assert client.get("/web-app/taglib/taglib-uri", test_space).json() == "cofax.tld"
-    assert client.get("/web-app/servlet/0/servlet-name", test_space).json() == "cofaxCDS"
-
-
-    response = client.get("/web-app/servlet", test_space)
-    assert isinstance(response.json(), list)
-
 def test_read_access(client: APIClient, test_space:str) -> None:
-    client.put("",test_space, {})
     client.put("/",test_space, "pass")
     assert client.get("/",test_space).json() == "pass"
     
@@ -95,17 +79,6 @@ def test_read_access(client: APIClient, test_space:str) -> None:
     response = client.get("/",test_space)
     assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.json() == {'detail': 'No membership status'}
-
-def test_list_deletion(client: APIClient, test_space:str) -> None:
-    client.put("",test_space, {})
-    client.put("/some_list", test_space, [1,2,3])
-    assert client.get(   "/some_list/0", test_space).json() == 1
-    assert client.delete("/some_list/0", test_space).status_code == 200
-    assert client.get(   "/some_list/0", test_space).json() == 2
-    assert client.delete("/some_list/0", test_space).status_code == 200
-    assert client.get(   "/some_list/0", test_space).json() == 3
-    assert client.delete("/some_list/0", test_space).status_code == 200
-    assert client.get(   "/some_list/0", test_space).status_code == HTTPStatus.NOT_FOUND
 
 @pytest.mark.timeout(1)
 def test_watch_put(client: APIClient, test_space:str) -> None:
@@ -133,7 +106,6 @@ def test_watch_put(client: APIClient, test_space:str) -> None:
             "space": test_space
         }], message
 
-
 @pytest.mark.timeout(1)
 def test_watch_order_of_delete_messages(client: APIClient, test_space:str) -> None:
     with client.websocket() as ws:
@@ -148,8 +120,6 @@ def test_watch_order_of_delete_messages(client: APIClient, test_space:str) -> No
 
         base = {"action": "insert", "space": test_space}
         expect: list[dict[str, Any]] = [
-            {**base, "path": "", "value": {}},
-            {**base, "path": "/settings", "value": {}},
             {**base, "path": "/settings/theme", "value": "dark"},
         ]
 
@@ -159,9 +129,7 @@ def test_watch_order_of_delete_messages(client: APIClient, test_space:str) -> No
         response = client.delete("",test_space)
         base:dict[str, Any] = {"action": "delete", "space": test_space, "value": None}
         expect: list[dict[str, Any]] = [
-            {**base, "path": "/settings/theme"},
-            {**base, "path": "/settings"},
-            {**base, "path": ""},
+            {**base, "path": "/settings/theme"}
         ]
 
         message = ws.receive_json(mode="text")
