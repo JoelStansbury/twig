@@ -1,10 +1,8 @@
 from contextlib import contextmanager
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
-from httpx import Response
+from httpx2 import Response
 from fastapi.testclient import TestClient
-
-from .models import ACTION
 
 class APIClient:
     def __init__(self, client: TestClient) -> None:
@@ -31,7 +29,7 @@ class APIClient:
             json=space_data
         )
 
-    def _api(self, action:ACTION, path:str, space:str, value:Any = "") -> Response:
+    def _api(self, action:Literal["PUT", "GET", "DELETE"], path:str, space:str, value:Any = "") -> Response:
         return self.client.post(
             "/api", 
             headers=self._get_headers(),

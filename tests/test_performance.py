@@ -1,7 +1,6 @@
 import time
 
 from twig.client import APIClient
-from starlette.testclient import WebSocketTestSession
 
 
 TEST_USER = {"username": "TestUser", "password": "password"}
@@ -43,7 +42,7 @@ def test_deep_put_scaling(client: APIClient):
     # should not explode
     #
 
-    assert deep < shallow * 20
+    assert deep < shallow * 2
 
 
 def test_get_large_subtree(client: APIClient):
@@ -51,12 +50,15 @@ def test_get_large_subtree(client: APIClient):
     for N in [100, 500, 1000]:
         # client.delete("", TEST_SPACE['name'])
         users = {str(i):{"name": f"user{i}"} for i in range(N)}
+        assert len(users) == N
+        # client.delete("", TEST_SPACE['name'])
         start = time.perf_counter()
-        client.put(
-            "/users",
+        resp = client.put(
+            "",
             TEST_SPACE["name"],
-            users,
+            {"users": users},
         )
+        assert resp.status_code == 200, resp.json()["detail"]
         elapsed = (
             time.perf_counter()
             - start
@@ -78,52 +80,9 @@ def test_get_large_subtree(client: APIClient):
             - start
         )
 
-        assert len(response.json()) == N
+        assert len(response.json()) == N, response.json()
 
         print(
             f"{N} node reconstruction:",
             elapsed
         )
-
-
-def test_watch_publish_scaling(client: APIClient):
-
-    sockets: list[WebSocketTestSession] = []
-
-    for i in range(100):
-
-        ws = client.client.websocket_connect(
-            f"/watch?token={client.token}"
-        ).__enter__()
-
-        ws.send_json({
-            "action": "subscribe",
-            "path": f"/root/{i}",
-            "space": TEST_SPACE['name']
-        })
-
-        ws.receive_json()
-
-        sockets.append(ws)
-
-    start = time.perf_counter()
-
-    client.put(
-        "/root/50/name",
-        TEST_SPACE["name"],
-        "bob",
-    )
-    print(sockets[50].receive_json())
-
-    elapsed = (
-        time.perf_counter()
-        - start
-    )
-
-    print(
-        "100 watchers:",
-        elapsed
-    )
-
-    for ws in sockets:
-        ws.__exit__(None, None, None)

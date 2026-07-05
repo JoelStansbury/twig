@@ -1,55 +1,49 @@
-import { ChangeMessage } from "../types"
-import APIClient from "./client";
-import { getAncestorPaths } from "./pointer_utils"
+import JSONPointer from "jsonpointer";
+import { IDataClient, ChangeMessage, WatchHandle } from "./client/types";
+import { fromParts, getAncestorPaths, getParts, makeAncestors } from "./pointer_utils"
 import JsonPointer from "jsonpointer";
 
 export default class TwigStore {
-    private client: APIClient
-    private websocket?: WebSocket
+    private client: IDataClient
+    private space: string
+    private websocket?: WatchHandle
     private listeners = new Map<string,Set<(msg:any)=>void>>()
-    data = new Map<string, any>()
+    data: Record<string, any> = {}
 
-    constructor(client: APIClient) {
+    constructor(client: IDataClient, space: string) {
         this.client = client
+        this.space = space
     }
 
     async connect() {
-        this.websocket = this.client.createWatchSocket(this.dispatch.bind(this))
-        return new Promise(
-            (resolve, reject) => {
-                this.websocket!.onopen = () => {
-                    resolve(this.websocket)
-                }
-            }
-        )
+        this.websocket = await this.client.createWatchSocket(this.dispatch.bind(this))
     }
 
 
-    async subscribe(path: string, space: string, callback: (msg:ChangeMessage)=>void) {
-        if (!this.listeners.has(`${space}-${path}`)) {
-
-            this.listeners.set(`${space}-${path}`, new Set([callback]))
-            this.websocket?.send(
-                JSON.stringify({
-                    action: "subscribe",
-                    path,
-                    space
-                })
-            )
-            await this.client.get(path, space).then(
+    async subscribe(path: string, callback: (value:any)=>void) {
+        
+        if (!this.listeners.has(path)) {
+            this.listeners.set(path, new Set([callback]))
+            this.websocket?.subscribe(this.space, path)
+            await this.client.get(path, this.space).then(
                 (value: any) => {
-                    this.data.set(`${space}-${path}`, value)
+                    if (path) {
+                        makeAncestors(this.data, path)
+                        JSONPointer.set(this.data, path, value)
+                    } else {
+                        this.data = value
+                    }
                     callback(value)
                 }
             )
         } else {
-            this.listeners.get(`${space}-${path}`)!.add(callback)
-            callback(this.data.get(`${space}-${path}`))
+            this.listeners.get(path)!.add(callback)
+            callback(JsonPointer.get(this.data, path))
         }
     }
 
-    unsubscribe(path: string, space: string, callback: (msg:ChangeMessage)=>void) {
-        const listeners = this.listeners.get(`${space}-${path}`)
+    unsubscribe(path: string, callback: (msg:ChangeMessage)=>void) {
+        const listeners = this.listeners.get(path)
 
         if (!listeners) {
             return
@@ -59,66 +53,93 @@ export default class TwigStore {
 
         if (listeners.size === 0) {
 
-            this.listeners.delete(`${space}-${path}`)
-            this.data.delete(`${space}-${path}`)
+            this.listeners.delete(path)
+            this.data.delete(path)
 
-            this.websocket?.send(
-                JSON.stringify({
-                    action: "unsubscribe",
-                    path,
-                })
-            )
+            this.websocket?.unsubscribe(this.space, path)
 
         }
 
     }
 
-    notify(space: string, path:string, value: any) {
+    notify(path:string) {
         const ancestors = getAncestorPaths(path)
         for (const parent of ancestors) {
-            const callbacks = this.listeners.get(`${space}-${parent}`)
+            const callbacks = this.listeners.get(parent)
 
             if (!callbacks) {
                 continue
             }
 
-            const parentValue = this.data.get(`${space}-${parent}`)
-
-            const rel_path = path.replace(parent, "")
-            if (rel_path) {
-                JsonPointer.set(
-                    parentValue, 
-                    rel_path, 
-                    value
-                )
-            } else {
-                this.data.set(`${space}-${path}`, value)
-            }
+            const parentValue = JsonPointer.get(this.data, parent)
 
             for (const cb of callbacks) {
+                // console.log(this.data, this.listeners)
+                // console.log("NOTIFY", parent, parentValue)
                 cb(parentValue)
             }
         }
     }
 
-    dispatch(msg: ChangeMessage) {
-        const {path, space, value} = msg
-        const currentValue = this.data.get(`${space}-${path}`)
+    dispatch(messeges: ChangeMessage[] | ChangeMessage) {
+        if (!Array.isArray(messeges)) {
+            return
+        }
+        const notifications: Set<string | undefined> = new Set()
+        for (const msg of messeges) {
+            notifications.add(this._dispatch(msg))
+            
+        }
+        for (const path of notifications) {
+            if (path !== undefined) {this.notify(path)}
+        }
+    }
+
+    _delete(path:string) {
+        const parts = getParts(path)
+        const stem = parts[parts.length-1]
+        const parentPath = fromParts(parts.slice(0,-1))
+        if (parentPath === "") {
+            delete this.data[stem]
+        } else {
+            const parent = JsonPointer.get(this.data, parentPath)
+            delete parent[stem]
+        }
+    }
+    _set(path:string, value:any) {
+        // console.log("SET", path, value)
+        // console.log("  Before", this.data)
+        const currentValue = JsonPointer.get(this.data, path)
+        if (currentValue === value) {return}
+        if (currentValue === undefined) {
+            const toBuild: string[] = []
+            for (const ancestor of getAncestorPaths(path, false, false).reverse()) {
+                if (JsonPointer.get(this.data, ancestor) !== undefined) {break}
+                toBuild.push(ancestor)
+            }
+            toBuild.reverse().map((p)=>{
+                // console.log("  CREATE", p, "->", "{}")
+                JsonPointer.set(this.data, p, {})
+            })
+
+        }
+        // console.log("  FINALLY", path, "->", value)
+        JsonPointer.set(this.data, path, value)
+    }
+
+    _dispatch(msg: ChangeMessage): string | undefined {
+        const {path, value} = msg
         if (msg.action === "unsubscribed" ) {return}
         if (msg.action === "subscribed" ) {return}
         if (msg.action === "rejected" ) {return}
-        // NOTE: This requires notifications to be received in the correct order, 
-        // which probably can not be garunteed
-
-        if (Array.isArray(value) && Array.isArray(currentValue)) {return}
-        if (typeof value === "object" && typeof currentValue === "object" && currentValue !== null) {return}
-        if (currentValue === value) {return}
-
-
+        console.log(msg)
+        // console.log("  BEFORE", this.data)
         if (msg.action === "delete") {
-            this.notify(space, path, undefined)
-        } else {
-            this.notify(space, path, value)
+            this._delete(path)
+            return path
         }
+        this._set(path, value)
+        // console.log("  AFTER", this.data)
+        return path
     }
 }

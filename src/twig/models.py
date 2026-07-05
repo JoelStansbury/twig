@@ -1,6 +1,7 @@
 
+
 from pydantic import BaseModel
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TypedDict
 
 from fastapi import Depends
 
@@ -8,7 +9,7 @@ from .auth import oauth2_scheme
 
 TokenStr = Annotated[str, Depends(oauth2_scheme)]
 type JsonValue = dict[str, JsonValue] | list[JsonValue] | str | int | float | bool | None
-ACTION = Literal["PUT", "GET", "DELETE", "subscribe", "unsubscribe"]
+ACTION = Literal["insert", "update", "delete", "subscribe", "unsubscribe"]
 
 class Token(BaseModel):
     access_token: TokenStr
@@ -28,7 +29,18 @@ class CreateSpaceQuery(BaseModel):
     name: str
 
 class ApiQuery(BaseModel):
-    action: ACTION
+    action: Literal["PUT", "GET", "DELETE"]
     path: str
     space: str
     value: JsonValue = None
+
+class WSQuery(BaseModel):
+    action: Literal["subscribe", "unsubscribe"]
+    path: str
+    space: str
+
+class ChangeMessage(TypedDict):
+    space:str
+    path:str
+    action: ACTION
+    value:JsonValue | None

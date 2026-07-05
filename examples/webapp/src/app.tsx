@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import APIClient from './utils/client';
+import APIClient from './utils/client/APIClient';
+import IndexedDBClient from './utils/client/IndexedDBClient'
 import SchemaEditor from "./components/schema-editor";
 import { flattenJson } from "./utils/flatten";
 import PrimitiveList from "./components/primitive-list";
 import TwigStore from "./utils/store";
+import { DOMAIN } from "./constants";
+import { IDataClient } from "./utils/client/types";
 
 const DEFAULT = {
   "settings": {
@@ -11,8 +14,10 @@ const DEFAULT = {
     "font": "calibri"
   }
 }
+const domain = DOMAIN
+const protocol = "http"
+const ws_protocol = "ws"
 
-// const client = new APIClient();
 const user = {
   "username": "TestUser",
   "password": "password"
@@ -22,29 +27,33 @@ export default function App() {
   const [text, setText] = useState<string | null>(JSON.stringify(DEFAULT, undefined, 2))
   const [entries, setEntries] = useState<any>(flattenJson(DEFAULT))
 
-  const clientRef = useRef<APIClient>(null)
+  const clientRef = useRef<IDataClient>(null)
 
   const storeRef = useRef<TwigStore>(null)
 
   useEffect(() => {
         async function init() {
-            const client =
-                new APIClient()
+            const client = new APIClient({domain, protocol, ws_protocol})
+            // const client = new IndexedDBClient()
+            const ready = await client.ready
+            if (!ready) {
+              console.error("Not Ready")
+            }
             clientRef.current = client
+
             await client.signup(user)
             await client.authenticate(user)
             await client.create_space(space).catch(() => {})
 
-            const store = new TwigStore(client)
+            const store = new TwigStore(client, space)
             storeRef.current = store
             await store.connect()
             store.subscribe(
-              "", 
-              space, 
-              (msg)=>{
-                setText(JSON.stringify(msg, undefined, 2))
-                setEntries(flattenJson(msg))
-                }
+              "",
+              (value: any)=>{
+                setText(JSON.stringify(value, undefined, 2))
+                setEntries(flattenJson(value))
+              }
             )
           
         }
@@ -79,6 +88,7 @@ export default function App() {
     },
     [clientRef]
   )
+  
   return <div className="app">
     <div
       style={{

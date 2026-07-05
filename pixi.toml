@@ -22,7 +22,7 @@ depends-on = ['-ruff-check']
 
 
 [tasks.start] 
-cmd = "echo 'Start' && python -m twig"
+cmd = "python -m twig"
 depends-on = ["gen-key", "create-db"]
 env = { DATABASE_URL="postgresql+psycopg2:///twig" }
 
@@ -58,6 +58,8 @@ pyjwt = "*"
 pytest = "*"
 pytest-html = "*"
 pytest-cov = "*"
+pytest-timeout = "*"
 mypy = "*"
 ruff = "*"
 types-psutil = "*"
+httpx2 = "*"
