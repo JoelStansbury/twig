@@ -77,7 +77,7 @@ class WatchManager:
                 full_listeners.add(id(websocket))
                 try:
                     await websocket.send_json(payload)
-                except Exception as e:
+                except Exception:
                     dead.append(websocket)
         
         # partial watchers (something that watches a child of path)

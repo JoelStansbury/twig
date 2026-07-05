@@ -1,7 +1,6 @@
 from http import HTTPStatus
 import json
 from typing import Annotated
-from jsonpointer import JsonPointer # type:ignore
 
 from fastapi import Depends, HTTPException
 from sqlmodel import Session, asc, select
@@ -34,11 +33,13 @@ def path_get(
     path: str,
     session: Session = Depends(get_session),
 ) -> JsonValue:
+    LOG.GET.debug(path)
     if membership.type < Membership.view:
         raise HTTPException(HTTPStatus.UNAUTHORIZED, detail="No read access")
 
     root_datum = session.get(Datum, (path, membership.space))
-    if root_datum != None:
+    if root_datum is not None:
+        LOG.GET.debug(f'  Found "{root_datum.path}" -> {root_datum.value}')
         return json.loads(root_datum.value)
     
     root: dict[str, JsonValue] = {}
@@ -56,9 +57,12 @@ def path_get(
         raise HTTPException(HTTPStatus.NOT_FOUND)
 
     for row in rows:
+        LOG.GET.debug(f'  "{row.path}" -> {row.value}')
         value = json.loads(row.value)
         rel_path = row.path[len(path):]
         pointer_put(root, rel_path, value)
+    
+    LOG.GET.debug(f'  -> {root}')
     return root
 
 async def path_put(
@@ -79,21 +83,21 @@ async def path_put(
 
 
     # Do insertions
-    touched_paths, messages = recursive_put(value, membership.space, path, session, all_paths)
-
+    touched_paths, put_messages = recursive_put(value, membership.space, path, session, all_paths)
+    del_messages: list[ChangeMessage] = []
     # Prune
     for orphaned_path in set(all_paths) - touched_paths:
         LOG.PUT.debug(f'DELETING "{orphaned_path}"')
         obj = session.get(Datum, (orphaned_path, membership.space))
         session.delete(obj)
-        messages.append(ChangeMessage(
+        del_messages.append(ChangeMessage(
             path=orphaned_path,
             space=membership.space,
             action="delete",
             value=None
         ))
     session.commit()
-    await WEBSOCKET_MANAGER.publish(membership.space, path, messages)
+    await WEBSOCKET_MANAGER.publish(membership.space, path, del_messages + put_messages)
 
 async def path_delete(
     membership: SpaceMembership, 
@@ -102,6 +106,7 @@ async def path_delete(
 ) -> None:
     if membership.type < Membership.edit:
         raise HTTPException(HTTPStatus.UNAUTHORIZED)
+    LOG.DELETE.debug(path)
     changes = await delete_datum(membership.space, path, session)
     await WEBSOCKET_MANAGER.publish(membership.space, path, changes)
     session.commit()

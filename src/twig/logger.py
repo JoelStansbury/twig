@@ -7,8 +7,8 @@ class LOG:
     DELETE = logging.getLogger("DELETE")
     WATCH = logging.getLogger("WS")
 
-LOG.PUT.setLevel(logging.DEBUG)
-LOG.GET.setLevel(logging.DEBUG)
-LOG.DELETE.setLevel(logging.DEBUG)
-LOG.WATCH.setLevel(logging.DEBUG)
+LOG.PUT.setLevel(logging.ERROR)
+LOG.GET.setLevel(logging.ERROR)
+LOG.DELETE.setLevel(logging.ERROR)
+LOG.WATCH.setLevel(logging.ERROR)
 logging.getLogger("watchfiles.main").setLevel(logging.ERROR)

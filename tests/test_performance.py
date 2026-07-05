@@ -42,7 +42,7 @@ def test_deep_put_scaling(client: APIClient):
     # should not explode
     #
 
-    assert deep < shallow * 20
+    assert deep < shallow * 2
 
 
 def test_get_large_subtree(client: APIClient):

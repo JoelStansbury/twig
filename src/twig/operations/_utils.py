@@ -15,7 +15,7 @@ def pointer_put(obj: JsonValue, path:str, value:JsonValue):
         LOG.PUT.error(err)
         raise ValueError(err)
     
-    LOG.PUT.debug(f"POINTER_PUT {obj} {path}")
+    LOG.PUT.debug(f"POINTER_PUT {path} {value}")
     parts = [unescape(part) for part in path.split("/")]
     cursor: dict[str, Any] = obj
     for part in parts[1:-1]:
@@ -47,8 +47,8 @@ def recursive_put(
 ) -> tuple[set[str], list[ChangeMessage]]:
     change_messages = [] if change_messages is None else change_messages
     touched_paths = set() if touched_paths is None else touched_paths
-    touched_paths.add(path)
     if isinstance(obj, (int, str, float, bool, list)) or obj is None:
+        touched_paths.add(path)
         _do_put(obj, space, path, session, existing_rows, change_messages)
     else:
         for k, v in obj.items():

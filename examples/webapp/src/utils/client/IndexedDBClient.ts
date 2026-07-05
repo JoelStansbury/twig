@@ -5,6 +5,7 @@ import {
     WatchHandle,
 } from "./types";
 import { getAncestorPaths, getPrimitives } from "../pointer_utils";
+import { debounce } from "../debounce";
 
 
 
@@ -13,6 +14,7 @@ export default class IndexedDBClient
     implements IDataClient {
 
     private db!: IDBDatabase;
+    protected saveSpace;
 
     private channel =
         new BroadcastChannel("twig");
@@ -22,11 +24,12 @@ export default class IndexedDBClient
 
     constructor(token?: string) {
         this.token = token;
+        this.saveSpace = debounce(this._saveSpace.bind(this), 250)
         this._ready = new Promise<boolean>((resolve, reject) => {
             this.init().then(()=>resolve(true))
         })
     }
-    private onmessage?: (message: ChangeMessage) => void
+    private onmessage?: (message: ChangeMessage[]) => void
 
     async init() {
         this.db = await new Promise(
@@ -60,10 +63,11 @@ export default class IndexedDBClient
         return this._ready;
     }
 
-    protected postMessage(message: ChangeMessage) {
-        this.channel.postMessage(message)
+    protected postMessage(messages: ChangeMessage[]) {
+        
+        this.channel.postMessage(messages)
         if (this.onmessage) {
-            this.onmessage(message)
+            this.onmessage(messages)
         }
     }
 
@@ -84,18 +88,7 @@ export default class IndexedDBClient
     async create_space(
         name: string
     ): Promise<Response> {
-
-        const tx = this.db.transaction(
-            "spaces",
-            "readwrite"
-        );
-
-        tx.objectStore("spaces")
-            .put({}, name);
-
-        return new Promise((resolve, reject) => {
-            tx.oncomplete = (ev) => {resolve(new Response())};
-        })
+        return new Promise((resolve, reject) => resolve(new Response()))
     }
 
     private async loadSpace(
@@ -103,7 +96,8 @@ export default class IndexedDBClient
     ) {
 
         const tx = this.db.transaction(
-            "spaces"
+            "spaces",
+            "readonly"
         );
 
         return new Promise<any>(
@@ -113,10 +107,13 @@ export default class IndexedDBClient
                     tx.objectStore("spaces")
                       .get(space);
 
-                request.onsuccess = () =>
-                    resolve(
-                        request.result ?? {}
-                    );
+                request.onsuccess = () => {
+                    const result = request.result;
+                    if (typeof result === "object" && result !== null) {
+                        resolve(result)
+                    }
+                    resolve({});
+                }
 
                 request.onerror = () =>
                     reject(request.error);
@@ -124,11 +121,13 @@ export default class IndexedDBClient
         );
     }
 
-    private async saveSpace(
+    private async _saveSpace(
         space: string,
         value: any
     ) {
 
+        const t0 = performance.now()
+        console.log("SAVE", t0)
         const tx = this.db.transaction(
             "spaces",
             "readwrite"
@@ -140,12 +139,16 @@ export default class IndexedDBClient
                 const request =
                     tx.objectStore("spaces")
                       .put(value, space);
-
-                request.onsuccess = () =>
+                request.onsuccess = () => {
+                    tx.commit();
+                    const tf = performance.now()
+                    console.log("DONE: ", tf - t0)
                     resolve();
+                }
 
-                request.onerror = () =>
+                request.onerror = () => {
                     reject(request.error);
+                }
             }
         );
     }
@@ -155,7 +158,6 @@ export default class IndexedDBClient
         space: string,
         value: any
     ): Promise<Response> {
-        console.log("PUT", path, value)
         const data = await this.loadSpace(space);
         const ancestors = getAncestorPaths(path, false, false)
         for (const ancestor_path of ancestors) {
@@ -170,32 +172,24 @@ export default class IndexedDBClient
         
         const messages: ChangeMessage[] = []
         for (const [k, v] of Object.entries(oldEntries).toReversed()) {
-            // console.log("CHECKING", k)
             if (newEntries[k] === undefined) {
-                // console.log("  DELETE")
                 messages.push({
                     action:"delete",
                     path: k,
                     space
                 })
-            } else {
-                // console.log("  ", newEntries[k])
             }
         }
         for (const [k, v] of Object.entries(newEntries)) {
             if (Object.hasOwn(oldEntries, k)) {
-                if (Array.isArray(newEntries[k]) && Array.isArray(oldEntries[k])) {
-                    // pass
-                } else if (typeof newEntries[k] === "object" && typeof oldEntries[k] === "object" && oldEntries[k] !== null) {
-                    // pass    
-                } else if (oldEntries[k] === newEntries[k]) {
+                if (oldEntries[k] === newEntries[k]) {
                     // pass
                 } else {
                     messages.push({
                         action:"update",
                         path: k,
                         space,
-                        value:v
+                        value:JSON.parse(v)
                     })
                 }
             } else {
@@ -203,7 +197,7 @@ export default class IndexedDBClient
                     action:"insert",
                     path: k,
                     space,
-                    value:v
+                    value:JSON.parse(v)
                 })
             }
         }
@@ -215,9 +209,7 @@ export default class IndexedDBClient
             await this.saveSpace(space, data);
         }
 
-        for (const message of messages) {
-            this.postMessage(message);
-        }
+        this.postMessage(messages);
 
         return new Response();
     }
@@ -226,9 +218,8 @@ export default class IndexedDBClient
         path: string,
         space: string
     ): Promise<any> {
-
         const data = await this.loadSpace(space);
-
+        if (path===""){return data}
         return JSONPointer.get(data, path);
     }
 
@@ -236,7 +227,6 @@ export default class IndexedDBClient
         path: string,
         space: string
     ): Promise<Response> {
-
         const data =
             await this.loadSpace(space);
 
@@ -250,7 +240,6 @@ export default class IndexedDBClient
 
         const messages: ChangeMessage[] = []
         for (const deleted_path of Object.keys(toDelete)) {
-            console.log("DELETE", deleted_path)
             messages.push({
                 action:"delete",
                 path: deleted_path,
@@ -260,16 +249,14 @@ export default class IndexedDBClient
 
         await this.saveSpace(space, data);
 
-        for (const message of messages) {
-            this.postMessage(message);
-        }
+        this.postMessage(messages);
 
         return new Response();
     }
 
     createWatchSocket(
         onmessage: (
-            message: ChangeMessage
+            messages: ChangeMessage[]
         ) => void
     ): Promise<WatchHandle> {
 

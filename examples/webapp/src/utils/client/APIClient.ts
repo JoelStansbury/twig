@@ -99,8 +99,11 @@ export default class APIClient implements IDataClient {
             path,
             space
         );
-
-        return response.json();
+        if (response.status == 200) {
+            return response.json();
+        } else if (response.status == 404) {
+            console.error(response.json())
+        }
     }
 
     create_space(name: string): Promise<Response> {

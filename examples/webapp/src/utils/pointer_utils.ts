@@ -20,6 +20,16 @@ export function getParts(path: string) {
 }
 
 
+export function fromParts(parts: string[]) {
+    if (parts.length === 0) {
+        return ""
+    }
+    const escapedParts: string[] = []
+    parts.map((part) => {escapedParts.push(part.replace("~", "~0").replace("/", "~1"))})
+    return `/${escapedParts.join("/")}`
+}
+
+
 export function makeAncestors(data: any, path: string) {
     const parts = getParts(path).slice(0, -2);
     let cursor = data;
@@ -30,22 +40,13 @@ export function makeAncestors(data: any, path: string) {
     }
 
 }
-export function getPrimitives(data: any, prefix:string, collector:Record<string, any> = {}) {
-    if (Array.isArray(data)) {
-        collector[prefix] = []
-        let i = 0
-        for (const el of data) {
-            getPrimitives(el, `${prefix}/${i++}`, collector)
-        }
-    } else if (typeof data === "object" && data !== null) {
-        collector[prefix] = {}
+export function getPrimitives(data: any, prefix:string, collector:Record<string, string> = {}) {
+    if (typeof data === "object" && data !== null && !Array.isArray(data)) {
         for (const [k, v] of Object.entries(data)) {
             getPrimitives(v, `${prefix}/${k}`, collector)
         }
     } else {
-        collector[prefix] = data
+        collector[prefix] = JSON.stringify(data)
     }
-    // TODO: handle string, number, and object
-    // IMPORTANT: Make sure to properly escape the object keys
     return collector
 }
