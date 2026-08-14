@@ -10,3 +10,4 @@ secret
 Untitled*.ipynb
 .ipynb_checkpoints
 .reports
+database.db

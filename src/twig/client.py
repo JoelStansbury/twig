@@ -29,7 +29,7 @@ class APIClient:
             json=space_data
         )
 
-    def _api(self, action:Literal["PUT", "GET", "DELETE"], path:str, space:str, value:Any = "") -> Response:
+    def _api(self, action:Literal["PUT", "GET", "DELETE", "PEEK", "MATCH"], path:str, space:str, value:Any = "") -> Response:
         return self.client.post(
             "/api", 
             headers=self._get_headers(),
@@ -50,6 +50,12 @@ class APIClient:
     def get(self, path:str, space:str) -> Response:
         return self._api("GET", path, space)
     
+    def peek(self, path:str, space:str) -> Response:
+        return self._api("PEEK", path, space)
+    
+    def match(self, path:str, space:str) -> Response:
+        return self._api("MATCH", path, space)
+
     @contextmanager
     def websocket(self):
         with self.client.websocket_connect(

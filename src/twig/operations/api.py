@@ -1,9 +1,10 @@
 from http import HTTPStatus
 import json
+import re
 from typing import Annotated
 
 from fastapi import Depends, HTTPException
-from sqlmodel import Session, asc, select
+from sqlmodel import Session, asc, select, and_, col
 
 from twig.logger import LOG
 
@@ -24,9 +25,13 @@ async def api(
     if query.action=="PUT":
         return await path_put(membership, query.path, query.value, session)
     elif query.action=="GET":
-        return path_get(membership, query.path, session)    
+        return path_get(membership, query.path, session)
     elif query.action == "DELETE":
         return await path_delete(membership, query.path, session)
+    elif query.action == "PEEK":
+        return path_peek(membership, query.path, session)
+    elif query.action == "MATCH":
+        return path_match(membership, query.path, session)
 
 def path_get(
     membership: SpaceMembership,
@@ -64,6 +69,91 @@ def path_get(
     
     LOG.GET.debug(f'  -> {root}')
     return root
+
+def path_peek(membership: SpaceMembership, path: str, session: Session) -> list[str]:
+    # Ensure we handle the root path correctly
+    # If path is '', we want to match '/something'
+    # If path is '/', we want to match '//something'
+    # If path is '/a', we want to match '/a/something'
+
+    prefix = f"{path}/"
+
+    statement = (
+        select(Datum.path)
+        .where(
+            Datum.path.startswith(prefix),
+            Datum.space == membership.space,
+        )
+        .order_by(asc(Datum.path))
+    )
+    rows = session.exec(statement).all()
+
+    children: set[str] = set()
+    for r_path in rows:
+        rel_part = r_path[len(prefix):]
+        first_segment = rel_part.split('/')[0]
+        children.add(first_segment)
+
+    return sorted(list(children))
+
+def path_match(membership: SpaceMembership, path:str, session: Session) -> list[list[str]]:
+    # 1. Split the input path
+    # path: '/a/b/*/*' -> parts: ['', 'a', 'b', '*', '*']
+    parts = path.split('/')
+
+    # 2. Build the TWO patterns
+    # A: The SQL pattern (needs to be compatible with Postgres '~' or 'regexp_match')
+    # B: The Python pattern (needs to be compatible with Python's 're')
+
+    sql_parts: list[str] = []
+    py_parts: list[str] = []
+
+    for p in parts:
+        if p == '*':
+            # For Postgres, we want a non-greedy/non-slash match
+            # For Python, we use the same, but we use () to create the group
+            sql_parts.append(r'[^/]*')
+            py_parts.append(r'([^/]*)')
+        else:
+            # Escape the static part for both
+            escaped = re.escape(p)
+            sql_parts.append(escaped)
+            py_parts.append(escaped)
+
+    # Combine the patterns
+    # We use the same logic for both to ensure the structure is identical
+    sql_pattern = '^' + '/'.join(sql_parts)
+    py_pattern = '^' + '/'.join(py_parts)
+
+    # 3. The Query
+    # We use 'regexp_match' in the WHERE clause to ensure the DB only returns valid rows.
+    # In many SQLAlchemy dialects, the '~' operator is used for POSIX regex.
+    statement = (
+        select(Datum.path)
+        .where(
+            and_(
+                col(Datum.path).op('~')(sql_pattern),
+                Datum.space == membership.space,
+            )
+        )
+    )
+    rows = session.exec(statement).all()
+    print(sql_pattern, rows)
+    print(session.exec(select(Datum.path).where(Datum.space == membership.space)).all())
+
+    # 4. The Extraction
+    results: set[tuple[str, ...]] = set()
+    for r_path in rows:
+        # Use the Python-specific pattern to extract the groups
+        match = re.search(py_pattern, r_path)
+        if match:
+            # match.groups() returns only the captured parts (the wildcards)
+            groups = match.groups()
+            # Only add if there were actually wildcards to capture
+            if groups:
+                results.add(groups)
+
+    return [list(x) for x in results]
 
 async def path_put(
     membership: SpaceMembership,

@@ -29,7 +29,7 @@ class CreateSpaceQuery(BaseModel):
     name: str
 
 class ApiQuery(BaseModel):
-    action: Literal["PUT", "GET", "DELETE"]
+    action: Literal["PUT", "GET", "DELETE", "PEEK", "MATCH"]
     path: str
     space: str
     value: JsonValue = None

@@ -20,8 +20,7 @@ For example:
   }
 }
 
-Updating /user/profile/name should not require rewriting the entire document.
-
+Updating /user/profile/name, in a traditional document store, would require a rewrite of the entire document.
 Twig stores primitive values separately and uses JSON Pointer paths as stable identifiers, allowing updates and subscriptions to target specific locations within a document.
 
 
@@ -46,7 +45,7 @@ Twig uses JSON Pointer style paths:
 ```
 /user/profile/name
 /settings/theme
-/projects/123/tasks/0/title
+/projects/abc/tasks/item-0/title
 ```
 
 Paths identify locations within a document hierarchy.

@@ -58,7 +58,7 @@ export default class APIClient implements IDataClient {
     }
 
     private async _api(
-        action: "PUT" | "GET" | "DELETE",
+        action: "PUT" | "GET" | "DELETE" | "PEEK" | "MATCH",
         path: string,
         space: string,
         value?: any
@@ -103,6 +103,40 @@ export default class APIClient implements IDataClient {
             return response.json();
         } else if (response.status == 404) {
             console.error(response.json())
+        }
+    }
+
+    async peek(
+        path: string,
+        space: string
+    ): Promise<string[]> {
+        const response = await this._api(
+            "PEEK",
+            path,
+            space
+        );
+        if (response.status == 200) {
+            return response.json();
+        } else {
+            console.error(response.json())
+            return []
+        }
+    }
+
+    async match(
+        path: string,
+        space: string
+    ): Promise<string[][]> {
+        const response = await this._api(
+            "MATCH",
+            path,
+            space
+        );
+        if (response.status == 200) {
+            return response.json();
+        } else {
+            console.error(response.json())
+            return []
         }
     }
 
