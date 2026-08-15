@@ -1,17 +1,21 @@
-import { getParts } from "./store/pointer_utils"
+import { renderString } from "nunjucks";
 import { StoreInterface } from "./store_interface";
-import { render, renderString } from "nunjucks";
+import { getParts } from "./store/pointer_utils";
 
 function cartesianProduct<T>(arrays: T[][]): T[][] {
-    return arrays.reduce((acc, curr) => {
-        return acc.flatMap(a => curr.map(b => [...a, b]));
-    }, [[] as T[]]);
+    return arrays.reduce<T[][]>(
+        (acc, curr) =>
+            acc.flatMap(a => curr.map(b => [...a, b])),
+        [[]]
+    );
 }
+
+type NodeType = "data" | "func";
 
 type Node = {
     feeders: string[];
     consumers: string[];
-    type: 'data' | 'func';
+    type: NodeType;
 };
 
 type Edge = {
@@ -19,24 +23,48 @@ type Edge = {
 };
 
 type ChangeMessage = {
-    old: string;
-    new: string;
+    old: any;
+    new: any;
     source: string;
     dest: string;
 };
 
-
 class Graph {
-    nodes: Record<string, Node> = {};
-    edges: Map<string, Edge> = new Map();
-    store: StoreInterface;
+    private nodes: Record<string, Node> = {};
+    private edges: Map<string, Edge> = new Map();
+
+    private store: StoreInterface;
 
     public constructor(store: StoreInterface) {
         this.store = store;
     }
 
-    private getEdgeKey(u: string, path: string): string {
-        return `${u}::${path}`;
+    // -------------------------------------------------------------------------
+    // Graph utilities
+    // -------------------------------------------------------------------------
+
+    private getEdgeKey(source: string, target: string): string {
+        return `${source}::${target}`;
+    }
+
+    private getConsumers(path: string): string[] {
+        const node = this.nodes[path];
+
+        if (!node) {
+            throw new Error(`Unknown node: ${path}`);
+        }
+
+        return node.consumers;
+    }
+
+    private getFeeders(path: string): string[] {
+        const node = this.nodes[path];
+
+        if (!node) {
+            throw new Error(`Unknown node: ${path}`);
+        }
+
+        return node.feeders;
     }
 
     private isCyclic(): boolean {
@@ -49,7 +77,9 @@ class Graph {
 
             for (const v of this.nodes[u].consumers) {
                 if (!visited.has(v)) {
-                    if (dfs(v)) return true;
+                    if (dfs(v)) {
+                        return true;
+                    }
                 } else if (recStack.has(v)) {
                     return true;
                 }
@@ -59,221 +89,551 @@ class Graph {
             return false;
         };
 
-        for (const node in this.nodes) {
-            if (!visited.has(node)) {
-                if (dfs(node)) return true;
+        for (const node of Object.keys(this.nodes)) {
+            if (!visited.has(node) && dfs(node)) {
+                return true;
             }
         }
+
         return false;
     }
 
-    private isAcyclic(): boolean {
-        return !this.isCyclic();
-    }
-
-    private async fetchContext(path: string): Promise<Record<string, string>> {
-        const keys: string[] = [];
-        const values: Promise<any>[] = [];
-        
-        for (const u of this.getFeeders(path)) {
-            keys.push(this.edges.get(this.getEdgeKey(u, path))?.keyword || "");
-            values.push(this.store.get(u));
+    private assertAcyclic(): void {
+        if (this.isCyclic()) {
+            throw new Error("Adding the dependency would create a cycle");
         }
-        return Promise.all(Object.values(values)).then(() => {
-            const entries = keys.map((key, index) => [key, values[index]]);
-            return Object.fromEntries(entries)
-        }
-        )
     }
 
-    private getConsumers(path: string): string[] {
-        return this.nodes[path].consumers;
-    }
+    /**
+     * Find all nodes downstream from `path` and assign each node a depth.
+     *
+     * If there are multiple paths to the same node, its depth is the maximum
+     * depth encountered. This is important for converging dependencies:
+     *
+     *       A       B
+     *        \     /
+     *         F1 F2
+     *           \/
+     *           F3
+     *
+     * F3 must execute after both F1 and F2.
+     */
+    private calcChain(
+        path: string
+    ): Record<string, number> {
+        const depths: Record<string, number> = {};
+        const stack: Array<[string, number]> = [[path, 0]];
 
-    private getFeeders(path: string): string[] {
-        return this.nodes[path].feeders;
-    }
+        while (stack.length > 0) {
+            const [current, depth] = stack.pop()!;
 
-    public registerChange(path: string, value: string): void {
-        this.store.get(path).then((oldValue) => {
-            if (oldValue === value) return;
-            this.store.put(path, value).catch(console.error);
-            const chain = this.calcChain(path);
-            let dirty = new Set<string>(this.getConsumers(path));
+            for (const consumer of this.getConsumers(current)) {
+                const nextDepth = depth + 1;
+                const previousDepth = depths[consumer];
 
-            // Sort functions by their execution order (the value in the chain)
-            const functions = Object.keys(chain).filter(k => chain[k] % 2 !== 0);
-            functions.sort((a, b) => chain[a] - chain[b]);
-
-            for (const funcPath of functions) {
-                if (!dirty.has(funcPath)) continue;
-
-                this.evaluate(funcPath).then((change) => {
-                    if (change.old !== change.new) {
-                        for (const d of change.dest.split(',')) {
-                            dirty.add(d);
-                        }
-                    }
-                })
-                
+                if (
+                    previousDepth === undefined ||
+                    nextDepth > previousDepth
+                ) {
+                    depths[consumer] = nextDepth;
+                    stack.push([consumer, nextDepth]);
+                }
             }
-        })
+        }
 
+        return depths;
+    }
+
+    // -------------------------------------------------------------------------
+    // Store / evaluation
+    // -------------------------------------------------------------------------
+
+    private async fetchContext(
+        funcPath: string
+    ): Promise<Record<string, any>> {
+        const feeders = this.getFeeders(funcPath);
+
+        const values = await Promise.all(
+            feeders.map(feeder => this.store.get(feeder))
+        );
+
+        return Object.fromEntries(
+            feeders.map((feeder, index) => {
+                const edge = this.edges.get(
+                    this.getEdgeKey(feeder, funcPath)
+                );
+
+                if (!edge) {
+                    throw new Error(
+                        `Missing edge from ${feeder} to ${funcPath}`
+                    );
+                }
+
+                return [edge.keyword, values[index]];
+            })
+        );
     }
 
     private getTargetPath(funcPath: string): string {
-        return this.getConsumers(funcPath)[0];
+        const consumers = this.getConsumers(funcPath);
+
+        if (consumers.length !== 1) {
+            throw new Error(
+                `Function ${funcPath} must have exactly one target; ` +
+                `found ${consumers.length}`
+            );
+        }
+
+        return consumers[0];
     }
 
     public async evaluate(funcPath: string): Promise<ChangeMessage> {
-        const func = await this.store.get(funcPath)
-        const template = func.template;
-        if (typeof template !== "string") console.error("unexpected template type");
-        
+        const templatePath = this.getTemplatePath(funcPath)
+        const template = await this.store.get(templatePath);
+
+        if (!template || typeof templatePath !== "string") {
+            throw new Error(
+                `Function ${templatePath} does not contain a valid template`
+            );
+        }
+
         const targetPath = this.getTargetPath(funcPath);
+
         const oldValue = await this.store.get(targetPath);
-        const kwargs = this.fetchContext(funcPath);
-        const newValue = JSON.parse(renderString(template, kwargs));
-        this.store.put(targetPath, newValue);
+
+        const context = await this.fetchContext(funcPath);
+
+        const rendered = renderString(
+            template,
+            context
+        );
+        // console.log({template, context, rendered, targetPath})
+
+        const newValue = JSON.parse(rendered);
+
+        await this.store.put(targetPath, newValue);
+
         return {
             old: oldValue,
             new: newValue,
             source: funcPath,
             dest: targetPath
         };
-
-
     }
 
-    private calcChain(path: string, order: number = 0, collector: Record<string, number> = {}): Record<string, number> {
-        for (const v of this.getConsumers(path)) {
-            collector[v] = Math.max(collector[v] || 0, order + 1);
-            this.calcChain(v, order + 1, collector);
+    /**
+     * Determine whether two stored values are equal by JSON value rather than
+     * JavaScript object identity.
+     */
+    private valuesEqual(a: any, b: any): boolean {
+        if (a === b) {
+            return true;
         }
-        return collector;
+
+        if (
+            typeof a !== "object" ||
+            typeof b !== "object" ||
+            a === null ||
+            b === null
+        ) {
+            return false;
+        }
+
+        try {
+            return JSON.stringify(a) === JSON.stringify(b);
+        } catch {
+            return false;
+        }
     }
+
+
+    private getTemplatePath(funcPath: string): string {
+        const parts = getParts(funcPath);
+
+        if (parts[0] !== "functions" || parts.length < 2) {
+            throw new Error(`Invalid function path: ${funcPath}`);
+        }
+
+        const name = parts[1];
+
+        return `/templates/${name}`;
+    }
+
+    /**
+     * Register a change to a data node and propagate it through the graph.
+     *
+     * Functions are evaluated in dependency order. A downstream function is
+     * only marked dirty when the function feeding it actually changes its
+     * output.
+     */
+    public async registerChange(
+        path: string,
+        value: any
+    ): Promise<void> {
+        const oldValue = await this.store.get(path);
+
+        if (this.valuesEqual(oldValue, value)) {
+            return;
+        }
+
+        await this.store.put(path, value);
+
+        const chain = this.calcChain(path);
+
+        /*
+         * Only function nodes participate in evaluation.
+         *
+         * Sort by depth so that upstream functions always execute before
+         * downstream functions.
+         */
+        const functions = Object.entries(chain)
+            .filter(([nodePath]) => {
+                // const functionName = ...
+                // Get name from function path
+                // Get templatePath from name
+                // return templatePath
+                const node = this.nodes[nodePath];
+                return node?.type === "func";
+            })
+            .sort(([, depthA], [, depthB]) => depthA - depthB);
+
+        /*
+         * Initially, only functions directly consuming the changed node
+         * are dirty.
+         */
+        const dirty = new Set<string>(
+            this.getConsumers(path).filter(
+                consumer => this.nodes[consumer]?.type === "func"
+            )
+        );
+
+        for (const [funcPath] of functions) {
+            if (!dirty.has(funcPath)) {
+                continue;
+            }
+
+            const change = await this.evaluate(funcPath);
+
+            /*
+             * Only propagate invalidation if the function actually changed
+             * its output.
+             */
+            if (this.valuesEqual(change.old, change.new)) {
+                continue;
+            }
+
+            /*
+             * The function's target is a data node. Mark any functions
+             * consuming that data node as dirty.
+             */
+            for (const consumer of this.getConsumers(change.dest)) {
+                if (this.nodes[consumer]?.type === "func") {
+                    dirty.add(consumer);
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Node insertion
+    // -------------------------------------------------------------------------
 
     public insertNode(path: string): void {
-        if (this.nodes[path]) throw new Error(`Node ${path} already exists`);
+        if (this.nodes[path]) {
+            throw new Error(`Node ${path} already exists`);
+        }
+
         this.nodes[path] = {
             feeders: [],
             consumers: [],
-            type: 'data'
+            type: "data"
         };
     }
 
-    public insertFunc(path: string, context: Record<string, string>, target: string): void {
-        // We assume context keys are the IDs of the feeder nodes
-        const feeders = Object.keys(context);
+    /**
+     * Add a consumer to a node if it isn't already present.
+     */
+    private addConsumer(
+        source: string,
+        target: string
+    ): void {
+        const consumers = this.nodes[source].consumers;
 
-        this.nodes[path] = {
-            feeders: [], // The context keys will be used to link
-            consumers: [target],
-            type: 'func'
-        };
+        if (!consumers.includes(target)) {
+            consumers.push(target);
+        }
+    }
 
-        // Link feeders to this function
-        for (const u of feeders) {
-            if (!this.nodes[u]) {
-                this.nodes[u] = {
-                    feeders: [],
-                    consumers: [path],
-                    type: "data"
-                }
+    /**
+     * Add a feeder to a node if it isn't already present.
+     */
+    private addFeeder(
+        target: string,
+        source: string
+    ): void {
+        const feeders = this.nodes[target].feeders;
+
+        if (!feeders.includes(source)) {
+            feeders.push(source);
+        }
+    }
+
+    /**
+     * Insert a single instantiated function into the graph.
+     *
+     * `context` maps template variable names to source node paths.
+     *
+     * For example:
+     *
+     *     {
+     *         price: "/products/123/price",
+     *         quantity: "/cart/123/quantity"
+     *     }
+     *
+     * creates:
+     *
+     *     /products/123/price    \
+     *                              -> function -> target
+     *     /cart/123/quantity     /
+     */
+    public insertFunc(
+        path: string,
+        context: Record<string, string>,
+        target: string,
+        template?: string
+    ): void {
+        // console.log("INSERT FUNCTION", {path,context,target})
+        if (this.nodes[path]) {
+            throw new Error(`Node ${path} already exists`);
+        }
+
+        if (template) {
+            const templatePath = this.getTemplatePath(path);
+            this.insertNode(templatePath)
+            this.store.put(templatePath, template)
+        }
+
+        /*
+         * Create missing data nodes first.
+         */
+        for (const source of Object.values(context)) {
+            if (!this.nodes[source]) {
+                this.insertNode(source);
             }
-            this.nodes[u].consumers.push(path);
         }
 
-        // Link function to target
         if (!this.nodes[target]) {
-            this.nodes[target] = { feeders: [], consumers: [], type: 'data' };
+            this.insertNode(target);
         }
 
-        // In your Python, feeders are the source nodes. In TS we update the structure:
-        this.nodes[path].feeders = feeders;
-        this.nodes[target].feeders.push(path);
+        /*
+         * Create the function node.
+         */
+        this.nodes[path] = {
+            feeders: [],
+            consumers: [target],
+            type: "func"
+        };
 
-        // Set edges
-        for (const [k, u] of Object.entries(context)) {
-            this.edges.set(this.getEdgeKey(u, path), { keyword: k });
+        /*
+         * Link source nodes to the function.
+         */
+        for (const [keyword, source] of Object.entries(context)) {
+            this.addConsumer(source, path);
+            this.addFeeder(path, source);
+
+            this.edges.set(
+                this.getEdgeKey(source, path),
+                { keyword }
+            );
         }
-        this.edges.set(this.getEdgeKey(path, target), { keyword: "" });
-        console.assert(this.isAcyclic())
+
+        /*
+         * Link the function to its output.
+         */
+        this.addFeeder(target, path);
+
+        this.edges.set(
+            this.getEdgeKey(path, target),
+            { keyword: "" }
+        );
+
+        /*
+         * Make sure this new dependency hasn't introduced a cycle.
+         */
+        this.assertAcyclic();
     }
 
-    public registerFunction(
+    // -------------------------------------------------------------------------
+    // Parameterized function registration
+    // -------------------------------------------------------------------------
+
+    public async registerFunction(
         name: string,
         forEach: string | Array<[string | string[], string]>,
         context: Record<string, string>,
         target: string
-    ): void {
-        // Normalize forEach
-        let normalizedForEach: Array<[string[], string]> = [];
-        if (typeof forEach === 'string') {
-            normalizedForEach = [[['key'], forEach]]; // Simplified logic for structure
+    ): Promise<void> {
+        /*
+         * Normalize `forEach`.
+         */
+        let normalizedForEach: Array<[string[], string]>;
+
+        if (typeof forEach === "string") {
+            normalizedForEach = [
+                [["key"], forEach]
+            ];
         } else {
-            normalizedForEach = forEach.map(([key, prefix]) => {
-                const keys = Array.isArray(key) ? key : [key];
-                return [keys, prefix] as [string[], string];
-            });
+            normalizedForEach = forEach.map(
+                ([key, prefix]) => {
+                    const keys = Array.isArray(key)
+                        ? key
+                        : [key];
+
+                    return [keys, prefix];
+                }
+            );
         }
 
-        this.insertNode(`/templates/${name}`);
+        /*
+         * The template itself is represented as a node in the graph.
+         * This node is not an executable function instance.
+         */
+        const templatePath = `/templates/${name}`;
 
-        const key_names: string[][] = []
-        const key_promises: Promise<string[][]>[] = []
-        normalizedForEach.map(([keyname, prefix]) => {
-            key_names.push(keyname);
-            key_promises.push(this._discover(prefix));
-        })
+        if (!this.nodes[templatePath]) {
+            this.insertNode(templatePath);
+        }
 
-        Promise.all(key_promises).then((keys) => {
-            const combinations = cartesianProduct(keys);
+        /*
+         * Discover the concrete keys for each `forEach` expression.
+         */
+        const keyNames: string[][] = [];
+        const keyPromises: Promise<string[][]>[] = [];
 
-            for (const combination of combinations) {
-                const keylist: string[] = combination.flat();
-                const namelist: string[] = key_names.flat();
+        for (const [names, prefix] of normalizedForEach) {
+            keyNames.push(names);
+            keyPromises.push(this.discover(prefix));
+        }
 
-                // Create the unique path for this specific function instance
-                const suffix = keylist.join("/");
-                const calc_path = `functions/${name}/${suffix}`;
+        const discoveredKeys = await Promise.all(keyPromises);
 
-                const zipMap = Object.fromEntries(
-                    namelist.map((name, i) => [name, keylist[i]])
+        /*
+         * Create one function instance for every Cartesian-product
+         * combination.
+         */
+        const combinations = cartesianProduct(discoveredKeys);
+
+        for (const combination of combinations) {
+            const keyList = combination.flat();
+            const nameList = keyNames.flat();
+
+            const suffix = keyList.join("/");
+            const funcPath = `/functions/${name}/${suffix}`;
+            
+
+            const zipMap = Object.fromEntries(
+                nameList.map((key, index) => [
+                    key,
+                    keyList[index]
+                ])
+            );
+
+            const [resolvedContext, dependencies] =
+                await this.resolveDependencies(
+                    context,
+                    zipMap
                 );
 
-                // Calculate dependencies and the final target path
-                this._resolveDependencies(context, zipMap).then(([ctx, deps]) => {
-                    // Use a simple template replacer for target.format(**ctx)
-                    const resolved_target = renderString(target, ctx);
-                    this.insertFunc(calc_path, deps, resolved_target);
+            const resolvedTarget = renderString(
+                target,
+                resolvedContext
+            );
+            // console.log({target, resolvedContext, resolvedTarget})
 
-                });
-
-            }
-        })
-    }
-
-    private _discover(prefix: string): Promise<string[][]> {
-        return this.store.match(prefix)
-    }
-
-    private async _resolveDependencies(
-        context: Record<string, any>, 
-        key: Record<string, string>
-    ): Promise<[Record<string, string>, Record<string, string>]> {
-        const ctx: Record<string, any> = { ...key };
-        const ret: Record<string, string> = {};
-
-        for (const [k, v] of Object.entries(context)) {
-            // A simple template replacement to find the pointer
-            let pointer = v;
-            for (const [ck, cv] of Object.entries(ctx)) {
-                pointer = pointer.split(`{${ck}}`).join(cv);
-            }
-            ctx[k] = this.store.get(pointer);
-            ret[k] = pointer;
+            /*
+             * The resolved context is used to render the target.
+             *
+             * The dependencies are what the graph actually needs:
+             *
+             *     template keyword -> concrete source path
+             */
+            this.insertFunc(
+                funcPath,
+                dependencies,
+                resolvedTarget
+            );
         }
-        return [ctx, ret];
+    }
+
+    private async discover(
+        prefix: string
+    ): Promise<string[][]> {
+        return this.store.match(prefix);
+    }
+
+    /**
+     * Resolve the parameterized context.
+     *
+     * Example:
+     *
+     * context:
+     *     {
+     *         price: "/products/{id}/price"
+     *     }
+     *
+     * key:
+     *     {
+     *         id: "123"
+     *     }
+     *
+     * produces:
+     *
+     *     resolved context:
+     *         {
+     *             id: "123",
+     *             price: <value at /products/123/price>
+     *         }
+     *
+     *     dependencies:
+     *         {
+     *             price: "/products/123/price"
+     *         }
+     */
+    private async resolveDependencies(
+        context: Record<string, any>,
+        key: Record<string, string>
+    ): Promise<
+        [Record<string, any>, Record<string, string>]
+    > {
+        const resolvedContext: Record<string, any> = {
+            ...key
+        };
+
+        const dependencies: Record<string, string> = {};
+
+        for (const [keyword, templatePath] of Object.entries(context)) {
+            // console.log("RENDERING", {templatePath, resolvedContext})
+            let pointer = renderString(templatePath, resolvedContext);
+            resolvedContext[keyword] =
+                await this.store.get(pointer);
+
+            dependencies[keyword] = pointer;
+        }
+        // console.log({resolvedContext})
+        return [
+            resolvedContext,
+            dependencies
+        ];
     }
 }
+
+export {
+    Graph
+};
+
+export type {
+    Node,
+    Edge,
+    ChangeMessage
+};
