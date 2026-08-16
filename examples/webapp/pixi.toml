@@ -7,6 +7,8 @@ platforms = ["linux-64"]
 version = "0.1.0"
 
 [tasks]
+test = "npx vitest"
+dev = "npx vite"
 
 [dependencies]
 nodejs = ">=25.8.2,<25.9"

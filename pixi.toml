@@ -10,6 +10,7 @@ code = "code ."
 gen-key = {cmd = "openssl rand -hex 32 >> secret", outputs = ["secret"]}
 create-db = "python scripts/db-init.py -n twig"
 create-test-db = "python scripts/db-init.py -n testdb --delete"
+lab = "jupyter lab"
 
 # Linting
 -ruff-fix = "ruff check src tests --fix"
@@ -63,3 +64,5 @@ mypy = "*"
 ruff = "*"
 types-psutil = "*"
 httpx2 = "*"
+jupyterlab = "*"
+networkx = "*"

@@ -19,7 +19,6 @@ export default class TwigStore {
         this.websocket = await this.client.createWatchSocket(this.dispatch.bind(this))
     }
 
-
     async subscribe(path: string, callback: (value:any)=>void) {
         
         if (!this.listeners.has(path)) {
@@ -40,6 +39,10 @@ export default class TwigStore {
             this.listeners.get(path)!.add(callback)
             callback(JsonPointer.get(this.data, path))
         }
+    }
+
+    async get(path: string) {
+        return await this.client.get(path, this.space)
     }
 
     unsubscribe(path: string, callback: (msg:ChangeMessage)=>void) {
@@ -97,18 +100,20 @@ export default class TwigStore {
 
     _delete(path:string) {
         const parts = getParts(path)
-        const stem = parts[parts.length-1]
+        let stem = parts[parts.length-1]
         const parentPath = fromParts(parts.slice(0,-1))
         if (parentPath === "") {
             delete this.data[stem]
         } else {
             const parent = JsonPointer.get(this.data, parentPath)
             delete parent[stem]
+            if (Object.keys(parent).length === 0) {
+                this._delete(parentPath)
+            }
         }
     }
+
     _set(path:string, value:any) {
-        // console.log("SET", path, value)
-        // console.log("  Before", this.data)
         const currentValue = JsonPointer.get(this.data, path)
         if (currentValue === value) {return}
         if (currentValue === undefined) {
@@ -132,7 +137,7 @@ export default class TwigStore {
         if (msg.action === "unsubscribed" ) {return}
         if (msg.action === "subscribed" ) {return}
         if (msg.action === "rejected" ) {return}
-        console.log(msg)
+        // console.log(msg)
         // console.log("  BEFORE", this.data)
         if (msg.action === "delete") {
             this._delete(path)

@@ -23,6 +23,10 @@ export interface IDataClient {
     put(path: string, space: string, value: any): Promise<Response>;
 
     get(path: string, space: string): Promise<any>;
+    
+    peek(path: string, space: string): Promise<string[]>;
+
+    match(path: string, space: string): Promise<string[][]>;
 
     delete(path: string, space: string): Promise<Response>;
 

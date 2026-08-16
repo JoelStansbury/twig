@@ -137,3 +137,63 @@ def test_watch_order_of_delete_messages(client: APIClient, test_space:str) -> No
             print(msg)
         assert message == expect, message
 
+def test_peek_and_match(client: APIClient, test_space: str) -> None:
+    """
+    Verifies the precision of peek and match functions.
+    """
+    # Setup: Create a structured tree
+    # Structure:
+    # /a/b/c -> 1
+    # /a/b/d -> 2
+    # /a/x/y -> 3
+    # /a/x/z -> 4
+
+    client.put("/a/b/c", test_space, {"val": 1})
+    client.put("/a/b/d", test_space, {"val": 2})
+    client.put("/a/x/y", test_space, {"val": 3})
+    client.put("/a/x/z", test_space, {"val": 4})
+
+    # --- Test 1: Peek ---
+    # Peeking into /a/b should return ['c', 'd']
+    # Peeking into /a/x should return ['y', 's']
+    # Peeking into /a/ should return ['b', 'x']
+
+    # We need to ensure 'b' and 'x' are captured from /a/
+    assert client.peek("/a", test_space).json() == ["b", "x"]
+    assert client.peek("/a/b", test_space).json() == ["c", "d"]
+    assert client.peek("/a/x", test_space).json() == ["y", "z"]
+
+    # Peeking into a non-existent leaf should be empty
+    assert client.peek("/a/b/c/deep", test_space).json() == []
+
+    # --- Test 2: Match (Wildcard) ---
+    # Testing /a/*/* should return all combinations of the two levels
+    # Expected: [['b', 'c'], ['b', 'd'], ['x', 'y'], ['x', 'z']] (order might vary)
+
+    # We need to handle the case where the path input is /a/*/*
+    # The match should find all leaf combinations at that depth
+    matches = client.match("/a/*/*", test_space).json()
+
+    # We need to sort to ensure comparison works
+    sorted_matches = set([tuple(m) for m in matches])
+    expected = set([
+        ('b', 'c'),
+        ('b', 'd'),
+        ('x', 'y'),
+        ('x', 'z'),
+    ])
+
+    assert sorted_matches == expected
+
+    matches = client.match("/a/*", test_space).json()
+    match_set = set([tuple(x) for x in matches])
+    assert match_set == set([('b',), ('x',)])
+
+def test_edge_cases(client: APIClient, test_space: str) -> None:
+    # Test the "" (empty string) path which is actually // in the DB
+    client.put("//empty", test_space, "empty_value")
+
+    assert client.peek("", test_space).json() == [""]
+    assert client.peek("/", test_space).json() == ["empty"]
+    assert client.match("/*", test_space).json() == [[""]]
+    assert client.match("/*/*", test_space).json() == [["", "empty"]]

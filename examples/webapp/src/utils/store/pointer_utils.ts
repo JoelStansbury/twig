@@ -38,8 +38,8 @@ export function makeAncestors(data: any, path: string) {
             cursor[part] = {}
         }
     }
-
 }
+
 export function getPrimitives(data: any, prefix:string, collector:Record<string, string> = {}) {
     if (typeof data === "object" && data !== null && !Array.isArray(data)) {
         for (const [k, v] of Object.entries(data)) {

@@ -126,8 +126,8 @@ export default class IndexedDBClient
         value: any
     ) {
 
-        const t0 = performance.now()
-        console.log("SAVE", t0)
+        // const t0 = performance.now()
+        // console.log("SAVE", t0)
         const tx = this.db.transaction(
             "spaces",
             "readwrite"
@@ -141,8 +141,8 @@ export default class IndexedDBClient
                       .put(value, space);
                 request.onsuccess = () => {
                     tx.commit();
-                    const tf = performance.now()
-                    console.log("DONE: ", tf - t0)
+                    // const tf = performance.now()
+                    // console.log("DONE: ", tf - t0)
                     resolve();
                 }
 
@@ -252,6 +252,15 @@ export default class IndexedDBClient
         this.postMessage(messages);
 
         return new Response();
+    }
+
+    
+    async peek(path: string, space: string): Promise<string[]> {
+        return []
+    }
+
+    async match(path: string, space: string): Promise<string[][]> {
+        return []
     }
 
     createWatchSocket(

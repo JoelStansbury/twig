@@ -1,4 +1,4 @@
-import { getPrimitives } from "./pointer_utils";
+import { getPrimitives } from "./store/pointer_utils";
 
 export function flattenJson(
   value:any,
