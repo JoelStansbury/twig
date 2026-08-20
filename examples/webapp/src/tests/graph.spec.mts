@@ -607,43 +607,4 @@ describe("Graph", () => {
         });
     });
 
-
-    // describe("parameterized functions", () => {
-    //     it("creates independent function instances", async () => {
-    //         const { graph, store } = createGraph({
-    //             products: {
-    //                 apple: {
-    //                     price: 2,
-    //                     quantity: 3,
-    //                     total: 0
-    //                 },
-    //                 orange: {
-    //                     price: 4,
-    //                     quantity: 5,
-    //                     total: 0
-    //                 }
-    //             },
-    //             __rules__: {
-    //                 productTotal: {
-    //                     forEach: [
-    //                         {
-    //                             varname: "key",
-    //                             parentPath: "/products"
-    //                         }
-    //                     ],
-    //                     inputs: {
-    //                         price: "/products/{{ key }}/price",
-    //                         quantity: "/products/{{ key }}/quantity"
-    //                     },
-    //                     template: "{{ price * quantity }}",
-    //                     target: "/products/{{ key }}/quantity"
-    //                 }
-    //             }
-    //         });
-
-    //         await graph.registerChange("/products/apple/price",10);
-    //         expect(await store.value("/products/apple/total")).toBe(30);
-    //         expect(await store.value("/products/orange/total")).toBe(0);
-    //     });
-    // });
 });
