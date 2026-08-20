@@ -17,10 +17,6 @@ import TwigStore from "../utils/store/store";
 //
 class JsonPointerStore extends StoreInterface {
     private data: any;
-    // private client: IDataClient
-    // store: TwigStore
-
-
 
     async initialize(onchange: (value: any) => void): Promise<void> {
         return void (0);
@@ -44,18 +40,46 @@ class JsonPointerStore extends StoreInterface {
         return {} as Response
     }
 
-    async match(prefix: string): Promise<string[][]> {
-        const value = this.getPointer(prefix);
+    async match(wildpath: string): Promise<string[][]> {
+        const parts = wildpath.split('/').slice(1);
+        const results: string[][] = [];
 
-        if (
-            value === undefined ||
-            value === null ||
-            typeof value !== "object"
-        ) {
-            return [];
+        function traverse(current: any, index: number, currentCaptures: string[]) {
+
+            // If we reached the end of the path
+            if (index === parts.length) {
+                // If the path had wildcards, return the captured keys
+                if (currentCaptures.length > 0) {
+                    results.push(currentCaptures);
+                }
+                return;
+            }
+
+            const part = parts[index];
+
+            // If we are at a wildcard
+            if (part === '*') {
+                if (current && typeof current === 'object') {
+                    const keys = Object.keys(current);
+                    for (const key of keys) {
+                        // We capture the key as the "group"
+                        traverse(current[key], index + 1, [...currentCaptures, key]);
+                    }
+                }
+            } else {
+                // If we are at a static key
+                if (current && typeof current === 'object' && part in current) {
+                    traverse(
+                        current[part], 
+                        index + 1, 
+                        currentCaptures
+                    );
+                }
+            }
         }
 
-        return Object.keys(value).map(key => [key]);
+        traverse(this.data, 0, []);
+        return results;
     }
 
     //
@@ -163,6 +187,28 @@ function createGraph(initial: any) {
     return { graph, store };
 }
 
+describe("Test Store", () => {
+    it("can match multi-paths", async () => {
+        const { graph, store } = createGraph({
+            users: {
+                "123": {
+                    hobbies: {
+                        "a": {
+                            name: "Alice"
+                        },
+                        "b": {
+                            name: "Alice"
+                        }
+                    }
+                }
+            }
+        });
+
+        expect(await store.match(
+            "/users/*/hobbies/*"
+        )).toStrictEqual([["123", "a"],["123", "b"]]);
+    });
+});
 
 describe("Graph", () => {
     describe("basic function evaluation", () => {
@@ -421,7 +467,7 @@ describe("Graph", () => {
 
             await graph.registerFunction(
                 "total",
-                [["id", "/products"]],
+                [["id", "/products/*"]],
                 {
                     price: "/products/{{id}}/price",
                     quantity: "/products/{{ id }}/quantity"
@@ -442,6 +488,54 @@ describe("Graph", () => {
             expect(await store.value(
                 "/products/orange/total"
             )).toBe(0);
+        });
+
+        it("can handle multi-paths", async () => {
+            const { graph, store } = createGraph({
+                users: {
+                    "123": {
+                        hobbies: {
+                            "a": {
+                                name: "Painting"
+                            },
+                            "b": {
+                                name: "Movies"
+                            }
+                        }
+                    }
+                },
+                templates: {
+                    total: '"COPY {{ hobbyName }}"'
+                }
+            });
+
+            await graph.registerFunction(
+                "total",
+                [[["userKey", "hobbyKey"], "/users/*/hobbies/*"]],
+                {
+                    hobbyName: "/users/{{ userKey }}/hobbies/{{ hobbyKey }}/name"
+                },
+                "/users/{{ userKey }}/hobbies/{{ hobbyKey }}/name_copy"
+            );
+            await graph.registerChange(
+                "/users/123/hobbies/a/name",
+                "Cars"
+            );
+            expect(await store.value(
+                "/users/123/hobbies/a/name_copy"
+            )).toBe("COPY Cars")
+            expect(await store.value(
+                "/users/123/hobbies/b/name_copy"
+            )).toBe(undefined)
+
+            await graph.registerChange(
+                "/users/123/hobbies/b/name",
+                "Games"
+            );
+            expect(await store.value(
+                "/users/123/hobbies/b/name_copy"
+            )).toBe("COPY Games")
+
         });
     });
 
@@ -512,4 +606,44 @@ describe("Graph", () => {
             )).toBe("Alice");
         });
     });
+
+
+    // describe("parameterized functions", () => {
+    //     it("creates independent function instances", async () => {
+    //         const { graph, store } = createGraph({
+    //             products: {
+    //                 apple: {
+    //                     price: 2,
+    //                     quantity: 3,
+    //                     total: 0
+    //                 },
+    //                 orange: {
+    //                     price: 4,
+    //                     quantity: 5,
+    //                     total: 0
+    //                 }
+    //             },
+    //             __rules__: {
+    //                 productTotal: {
+    //                     forEach: [
+    //                         {
+    //                             varname: "key",
+    //                             parentPath: "/products"
+    //                         }
+    //                     ],
+    //                     inputs: {
+    //                         price: "/products/{{ key }}/price",
+    //                         quantity: "/products/{{ key }}/quantity"
+    //                     },
+    //                     template: "{{ price * quantity }}",
+    //                     target: "/products/{{ key }}/quantity"
+    //                 }
+    //             }
+    //         });
+
+    //         await graph.registerChange("/products/apple/price",10);
+    //         expect(await store.value("/products/apple/total")).toBe(30);
+    //         expect(await store.value("/products/orange/total")).toBe(0);
+    //     });
+    // });
 });

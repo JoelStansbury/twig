@@ -470,21 +470,21 @@ class Graph {
 
     public async registerFunction(
         name: string,
-        forEach: string | Array<[string | string[], string]>,
-        context: Record<string, string>,
-        target: string
+        generator: string | Array<[string | string[], string]>,
+        domain_mapper: Record<string, string>,
+        range_mapper: string
     ): Promise<void> {
         /*
          * Normalize `forEach`.
          */
         let normalizedForEach: Array<[string[], string]>;
 
-        if (typeof forEach === "string") {
+        if (typeof generator === "string") {
             normalizedForEach = [
-                [["key"], forEach]
+                [["key"], generator]
             ];
         } else {
-            normalizedForEach = forEach.map(
+            normalizedForEach = generator.map(
                 ([key, prefix]) => {
                     const keys = Array.isArray(key)
                         ? key
@@ -509,20 +509,20 @@ class Graph {
          * Discover the concrete keys for each `forEach` expression.
          */
         const keyNames: string[][] = [];
-        const keyPromises: Promise<string[][]>[] = [];
+        const resolutions: string[][][] = [];
 
         for (const [names, prefix] of normalizedForEach) {
             keyNames.push(names);
-            keyPromises.push(this.discover(prefix));
+            await this.discover(prefix).then((value) => {
+                resolutions.push(value)
+            })
         }
-
-        const discoveredKeys = await Promise.all(keyPromises);
 
         /*
          * Create one function instance for every Cartesian-product
          * combination.
          */
-        const combinations = cartesianProduct(discoveredKeys);
+        const combinations = cartesianProduct(resolutions);
 
         for (const combination of combinations) {
             const keyList = combination.flat();
@@ -541,12 +541,12 @@ class Graph {
 
             const [resolvedContext, dependencies] =
                 await this.resolveDependencies(
-                    context,
+                    domain_mapper,
                     zipMap
                 );
 
             const resolvedTarget = renderString(
-                target,
+                range_mapper,
                 resolvedContext
             );
             // console.log({target, resolvedContext, resolvedTarget})

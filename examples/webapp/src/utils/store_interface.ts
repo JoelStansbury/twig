@@ -54,8 +54,8 @@ export class StoreInterface {
         return this.client.peek(path, space)
     }
 
-    async match(path:string) {
-        return this.client.match(path, space)
+    async match(wildpath:string) {
+        return this.client.match(wildpath, space)
     }
 
 }
