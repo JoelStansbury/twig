@@ -1,20 +1,17 @@
 import JSONPointer from "jsonpointer";
 import {
     ChangeMessage,
-    IDataClient,
+    IClient,
     WatchHandle,
-} from "./types";
+} from "../types";
 import { getAncestorPaths, getPrimitives } from "../pointer_utils";
-import { debounce } from "../debounce";
 
 
-
-
-export default class IndexedDBClient
-    implements IDataClient {
+export class IDBClient
+    implements IClient {
 
     private db!: IDBDatabase;
-    protected saveSpace;
+    // protected saveSpace;
 
     private channel =
         new BroadcastChannel("twig");
@@ -24,7 +21,7 @@ export default class IndexedDBClient
 
     constructor(token?: string) {
         this.token = token;
-        this.saveSpace = debounce(this._saveSpace.bind(this), 250)
+        // this.saveSpace = debounce(this._saveSpace.bind(this), 250)
         this._ready = new Promise<boolean>((resolve, reject) => {
             this.init().then(()=>resolve(true))
         })
@@ -203,10 +200,10 @@ export default class IndexedDBClient
         }
 
         if (path === ""){
-            await this.saveSpace(space, value)
+            await this._saveSpace(space, value)
         } else {
             JSONPointer.set(data, path, value);
-            await this.saveSpace(space, data);
+            await this._saveSpace(space, data);
         }
 
         this.postMessage(messages);
@@ -247,20 +244,60 @@ export default class IndexedDBClient
             })
         }
 
-        await this.saveSpace(space, data);
+        await this._saveSpace(space, data);
 
         this.postMessage(messages);
 
         return new Response();
     }
 
-    
     async peek(path: string, space: string): Promise<string[]> {
         return []
     }
 
-    async match(path: string, space: string): Promise<string[][]> {
-        return []
+    async match(wildpath: string, space: string): Promise<string[][]> {
+        const data = await this.loadSpace(space);
+
+        const parts = wildpath.split('/').slice(1);
+        const results: string[][] = [];
+
+        function traverse(current: any, index: number, currentCaptures: string[]) {
+
+            // If we reached the end of the path
+            if (index === parts.length) {
+                // If the path had wildcards, return the captured keys
+                if (currentCaptures.length > 0) {
+                    results.push(currentCaptures);
+                }
+                return;
+            }
+
+            const part = parts[index];
+
+            // If we are at a wildcard
+            if (part === '*') {
+                if (current && typeof current === 'object') {
+                    const keys = Object.keys(current);
+                    for (const key of keys) {
+                        // We capture the key as the "group"
+                        traverse(current[key], index + 1, [...currentCaptures, key]);
+                    }
+                }
+            } else {
+                // If we are at a static key
+                if (current && typeof current === 'object' && part in current) {
+                    traverse(
+                        current[part], 
+                        index + 1, 
+                        currentCaptures
+                    );
+                }
+            }
+        }
+
+        traverse(data, 0, []);
+        return results;
+
     }
 
     createWatchSocket(

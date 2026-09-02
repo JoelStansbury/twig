@@ -1,41 +1,23 @@
 import { renderString } from "nunjucks";
-import { StoreInterface } from "./store_interface";
-import { getParts } from "./store/pointer_utils";
+import { Store } from "@twig/store";
+import { cartesianProduct, getParts } from "./utils";
+import { Node, Edge, ChangeMessage } from "./types";
 
-function cartesianProduct<T>(arrays: T[][]): T[][] {
-    return arrays.reduce<T[][]>(
-        (acc, curr) =>
-            acc.flatMap(a => curr.map(b => [...a, b])),
-        [[]]
-    );
-}
 
-type NodeType = "data" | "func";
-
-type Node = {
-    feeders: string[];
-    consumers: string[];
-    type: NodeType;
-};
-
-type Edge = {
-    keyword: string;
-};
-
-type ChangeMessage = {
-    old: any;
-    new: any;
-    source: string;
-    dest: string;
-};
-
-class Graph {
+// TODO:
+// Instance Prefix or something
+//    The template is stored in a Map, the key is the funcName. 
+//    When needed, the key must be determined from the functionInstancePath 
+//    (the thing which sits between the inputs and outputs). 
+//    In some tests, the prefix for all functionInstancePaths is either `/calc/` or `/function/`.
+//    Make this configurable, or find some way to eliminate its nessecity.
+export class Graph {
     private nodes: Record<string, Node> = {};
     private edges: Map<string, Edge> = new Map();
+    private templates: Map<string, string> = new Map();
+    private store: Store;
 
-    private store: StoreInterface;
-
-    public constructor(store: StoreInterface) {
+    public constructor(store: Store) {
         this.store = store;
     }
 
@@ -51,7 +33,7 @@ class Graph {
         const node = this.nodes[path];
 
         if (!node) {
-            throw new Error(`Unknown node: ${path}`);
+            return []
         }
 
         return node.consumers;
@@ -153,6 +135,7 @@ class Graph {
     ): Promise<Record<string, any>> {
         const feeders = this.getFeeders(funcPath);
 
+        console.log({feeders, data:await this.store.get("")})
         const values = await Promise.all(
             feeders.map(feeder => this.store.get(feeder))
         );
@@ -188,14 +171,8 @@ class Graph {
     }
 
     public async evaluate(funcPath: string): Promise<ChangeMessage> {
-        const templatePath = this.getTemplatePath(funcPath)
-        const template = await this.store.get(templatePath);
-
-        if (!template || typeof templatePath !== "string") {
-            throw new Error(
-                `Function ${templatePath} does not contain a valid template`
-            );
-        }
+        const funcName = this.getTemplateName(funcPath);
+        const template = this.templates.get(funcName)!;
 
         const targetPath = this.getTargetPath(funcPath);
 
@@ -207,7 +184,7 @@ class Graph {
             template,
             context
         );
-        // console.log({template, context, rendered, targetPath})
+        console.log({template, context, rendered, targetPath})
 
         const newValue = JSON.parse(rendered);
 
@@ -247,16 +224,14 @@ class Graph {
     }
 
 
-    private getTemplatePath(funcPath: string): string {
+    private getTemplateName(funcPath: string): string {
         const parts = getParts(funcPath);
 
-        if (parts[0] !== "functions" || parts.length < 2) {
-            throw new Error(`Invalid function path: ${funcPath}`);
-        }
+        // if (parts[0] !== "functions" || parts.length < 2) {
+        //     throw new Error(`Invalid function path: ${funcPath}`);
+        // }
 
-        const name = parts[1];
-
-        return `/templates/${name}`;
+        return parts[1];
     }
 
     /**
@@ -277,7 +252,6 @@ class Graph {
         }
 
         await this.store.put(path, value);
-
         const chain = this.calcChain(path);
 
         /*
@@ -402,15 +376,18 @@ class Graph {
         target: string,
         template?: string
     ): void {
-        // console.log("INSERT FUNCTION", {path,context,target})
         if (this.nodes[path]) {
             throw new Error(`Node ${path} already exists`);
         }
 
         if (template) {
-            const templatePath = this.getTemplatePath(path);
-            this.insertNode(templatePath)
-            this.store.put(templatePath, template)
+            const funcName = this.getTemplateName(path);
+            this.templates.set(funcName, template)
+        } else {
+            const funcName = this.getTemplateName(path);
+            if (!this.templates.has(funcName)) {
+                console.error("No template provided")
+            }
         }
 
         /*
@@ -470,21 +447,22 @@ class Graph {
 
     public async registerFunction(
         name: string,
-        forEach: string | Array<[string | string[], string]>,
-        context: Record<string, string>,
-        target: string
+        generator: string | Array<[string | string[], string]>,
+        domain_mapper: Record<string, string>,
+        range_mapper: string,
+        template: string,
     ): Promise<void> {
         /*
          * Normalize `forEach`.
          */
         let normalizedForEach: Array<[string[], string]>;
 
-        if (typeof forEach === "string") {
+        if (typeof generator === "string") {
             normalizedForEach = [
-                [["key"], forEach]
+                [["key"], generator]
             ];
         } else {
-            normalizedForEach = forEach.map(
+            normalizedForEach = generator.map(
                 ([key, prefix]) => {
                     const keys = Array.isArray(key)
                         ? key
@@ -499,37 +477,33 @@ class Graph {
          * The template itself is represented as a node in the graph.
          * This node is not an executable function instance.
          */
-        const templatePath = `/templates/${name}`;
-
-        if (!this.nodes[templatePath]) {
-            this.insertNode(templatePath);
-        }
+        this.templates.set(name, template)
 
         /*
          * Discover the concrete keys for each `forEach` expression.
          */
         const keyNames: string[][] = [];
-        const keyPromises: Promise<string[][]>[] = [];
+        const resolutions: string[][][] = [];
 
         for (const [names, prefix] of normalizedForEach) {
             keyNames.push(names);
-            keyPromises.push(this.discover(prefix));
+            await this.discover(prefix).then((value) => {
+                resolutions.push(value)
+            })
         }
-
-        const discoveredKeys = await Promise.all(keyPromises);
 
         /*
          * Create one function instance for every Cartesian-product
          * combination.
          */
-        const combinations = cartesianProduct(discoveredKeys);
+        const combinations = cartesianProduct(resolutions);
 
         for (const combination of combinations) {
             const keyList = combination.flat();
             const nameList = keyNames.flat();
 
             const suffix = keyList.join("/");
-            const funcPath = `/functions/${name}/${suffix}`;
+            const funcPath = `/calc/${name}/${suffix}`;
             
 
             const zipMap = Object.fromEntries(
@@ -541,12 +515,12 @@ class Graph {
 
             const [resolvedContext, dependencies] =
                 await this.resolveDependencies(
-                    context,
+                    domain_mapper,
                     zipMap
                 );
 
             const resolvedTarget = renderString(
-                target,
+                range_mapper,
                 resolvedContext
             );
             // console.log({target, resolvedContext, resolvedTarget})
@@ -561,7 +535,7 @@ class Graph {
             this.insertFunc(
                 funcPath,
                 dependencies,
-                resolvedTarget
+                resolvedTarget,
             );
         }
     }
@@ -570,6 +544,25 @@ class Graph {
         prefix: string
     ): Promise<string[][]> {
         return this.store.match(prefix);
+    }
+
+    public initialize() {
+        this.store.get("/functions").then(
+            (functions: Record<string, any>) => {
+                console.log(functions)
+                if (functions) {
+                    for (const [funcName, {domain_mapper, generator, range_mapper, template}] of Object.entries(functions)) {
+                        this.registerFunction(
+                            funcName,
+                            generator,
+                            domain_mapper,
+                            range_mapper,
+                            template
+                        )
+                    }
+                }
+            }
+        )
     }
 
     /**
@@ -614,7 +607,7 @@ class Graph {
 
         for (const [keyword, templatePath] of Object.entries(context)) {
             // console.log("RENDERING", {templatePath, resolvedContext})
-            let pointer = renderString(templatePath, resolvedContext);
+            const pointer = renderString(templatePath, resolvedContext);
             resolvedContext[keyword] =
                 await this.store.get(pointer);
 
@@ -627,13 +620,3 @@ class Graph {
         ];
     }
 }
-
-export {
-    Graph
-};
-
-export type {
-    Node,
-    Edge,
-    ChangeMessage
-};

@@ -13,7 +13,7 @@ export interface WatchHandle {
     unsubscribe(space:string, path:string): void;
 }
 
-export interface IDataClient {
+export interface IClient {
     readonly ready: Promise<boolean>;
 
     signup(data: any): Promise<Response>;

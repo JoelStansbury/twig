@@ -19,7 +19,6 @@ export function getParts(path: string) {
     return ret
 }
 
-
 export function fromParts(parts: string[]) {
     if (parts.length === 0) {
         return ""
@@ -28,7 +27,6 @@ export function fromParts(parts: string[]) {
     parts.map((part) => {escapedParts.push(part.replace("~", "~0").replace("/", "~1"))})
     return `/${escapedParts.join("/")}`
 }
-
 
 export function makeAncestors(data: any, path: string) {
     const parts = getParts(path).slice(0, -2);

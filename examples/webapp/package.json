@@ -2,6 +2,11 @@
   "overrides": {
     "dompurify": ">=3.3.3"
   },
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "type": "module",
   "devDependencies": {
     "@types/nunjucks": "^3.2.6",
     "@types/react": "^19.2.14",
@@ -10,7 +15,6 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-unused-imports": "^4.4.1",
     "jiti": "^2.7.0",
-    "jsonpointer": "^5.0.1",
     "nunjucks": "^3.2.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.60.0",
@@ -19,6 +23,8 @@
     "vite-plugin-singlefile": "^2.3.3"
   },
   "dependencies": {
+    "@twig/pointer-chain": "0.0.0",
+    "@twig/store": "0.0.0",
     "@monaco-editor/react": "^4.7.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"

@@ -9,6 +9,7 @@ version = "0.1.0"
 [tasks]
 test = "npx vitest"
 dev = "npx vite"
+fix = "npx eslint"
 
 [dependencies]
 nodejs = ">=25.8.2,<25.9"

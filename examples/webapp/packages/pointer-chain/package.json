@@ -1,0 +1,11 @@
+{
+  "name": "@twig/pointer-chain",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@twig/store": "0.0.0"
+  }
+}

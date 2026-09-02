@@ -1,16 +1,6 @@
-import { DOMAIN } from "../constants";
-import { flattenJson } from "./flatten";
-import APIClient from "./store/client/APIClient";
-import { IDataClient } from "./store/client/types";
-import TwigStore from "./store/store";
+import { Store, types, client } from "@twig/store";
 
-const DEFAULT = {
-  "settings": {
-    "darkMode": false,
-    "font": "calibri"
-  }
-}
-const domain = DOMAIN
+const domain = "localhost:8000"
 const protocol = "http"
 const ws_protocol = "ws"
 
@@ -24,13 +14,13 @@ export class StoreInterface {
     // This is an example interface which watches the entire space
 
 
-    private client: IDataClient
-    private store: TwigStore
+    private client: types.IClient
+    public store: Store
 
     constructor () {
-        this.client = new APIClient({domain, protocol, ws_protocol})
-        // this.client = new IndexedDBClient()
-        this.store = new TwigStore(this.client, space)
+        this.client = new client.APIClient({domain, protocol, ws_protocol})
+        // this.client = new client.IDBClient()
+        this.store = new Store(this.client, space)
     }
 
     async initialize (onchange:(value:any)=>void) {
@@ -40,22 +30,6 @@ export class StoreInterface {
         await this.client.create_space(space).catch(() => {})
         await this.store.connect()
         this.store.subscribe("", onchange)
-    }
-
-    async put(path:string, value:any) {
-        return this.client.put(path, space, value)
-    }
-
-    async get(path:string) {
-        return this.client.get(path, space)
-    }
-
-    async peek(path:string) {
-        return this.client.peek(path, space)
-    }
-
-    async match(path:string) {
-        return this.client.match(path, space)
     }
 
 }

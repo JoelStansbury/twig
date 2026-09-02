@@ -1,23 +1,30 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import SchemaEditor from "./components/schema-editor";
-import { flattenJson } from "./utils/flatten";
+import { pointerUtils } from "@twig/store";
 import PrimitiveList from "./components/primitive-list";
 import { StoreInterface } from "./utils/store_interface";
-import { findDependents, formatString, run } from "./utils/calc";
+import { Graph } from "@twig/pointer-chain";
+// import { findDependents, formatString, run } from "./utils/calc";
 
 export default function App() {
   const [text, setText] = useState<string>("{}")
   const [entries, setEntries] = useState<any>({})
   const storeRef = useRef<StoreInterface>(null)
+  const graphRef = useRef<Graph>(null)
 
   useEffect(() => {
       storeRef.current = new StoreInterface()
+      graphRef.current = new Graph(storeRef.current.store)
+
       const handleChange = (value: any)=>{
           setText(JSON.stringify(value, undefined, 2))
-          setEntries(flattenJson(value))
+          setEntries(pointerUtils.getPrimitives(value.data, "/data"))
       }
-      storeRef.current.initialize(handleChange)
+      storeRef.current.initialize(handleChange).then(
+        () => {graphRef.current!.initialize()}
+      )
     }, [])
+
 
   const onPrimitiveChange = useCallback(
     async (path:string, value:string) => {
@@ -26,25 +33,19 @@ export default function App() {
         newEntries[path] = value;
         return newEntries;
       })
-      storeRef.current!.put(path, JSON.parse(value))
-      const chain = await storeRef.current!.get("/calc")
-      for (const {key, args} of findDependents({path, chain})) {
-        const {path, func} = await storeRef.current!.get(`/functions/${key}`)
-        const target = formatString(path, args)
-        const value2 = await run(func, args, storeRef.current!)
-        onPrimitiveChange(target, value2)
-      }
+      graphRef.current?.registerChange(path, JSON.parse(value))
     },
     [storeRef]
   )
+  
 
   const onTextChange = useCallback(
     (value:string) => {
       setText(value)
       try {
         const data = JSON.parse(value)
-        storeRef.current!.put("", data).then(
-          ()=>{setEntries(flattenJson(data))}
+        storeRef.current!.store.put("", data).then(
+          ()=>{setEntries(pointerUtils.getPrimitives(data.data, "/data"))}
         )
       } catch (error) {}
     },
