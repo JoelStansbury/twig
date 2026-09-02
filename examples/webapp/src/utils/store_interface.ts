@@ -1,7 +1,6 @@
-import { DOMAIN } from "../constants";
 import { Store, types, client } from "@twig/store";
 
-const domain = DOMAIN
+const domain = "localhost:8000"
 const protocol = "http"
 const ws_protocol = "ws"
 

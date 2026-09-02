@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import SchemaEditor from "./components/schema-editor";
-import { flattenJson } from "./utils/flatten";
 import { pointerUtils } from "@twig/store";
 import PrimitiveList from "./components/primitive-list";
 import { StoreInterface } from "./utils/store_interface";

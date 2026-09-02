@@ -6,7 +6,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "jsonpointer": "^5.0.1",
     "@twig/store": "0.0.0"
   }
 }
