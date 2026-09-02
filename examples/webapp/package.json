@@ -6,6 +6,7 @@
   "workspaces": [
     "packages/*"
   ],
+  "type": "module",
   "devDependencies": {
     "@types/nunjucks": "^3.2.6",
     "@types/react": "^19.2.14",

@@ -1,0 +1,27 @@
+{
+  "data": {
+    "tableName": {
+      "r1": {
+        "a": 1,
+        "b": 10,
+        "sum": 11
+      },
+      "r2": {
+        "a": 1,
+        "b": 10,
+        "sum": 11
+      }
+    }
+  },
+  "functions": {
+    "sum": {
+      "domain_mapper": {
+        "a": "/data/tableName/{{ key }}/a",
+        "b": "/data/tableName/{{ key }}/b"
+      },
+      "generator": "/data/tableName/*",
+      "range_mapper": "/data/tableName/{{ key }}/sum",
+      "template": "{{ a + b }}"
+    }
+  }
+}
