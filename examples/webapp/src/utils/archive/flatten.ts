@@ -1,4 +1,4 @@
-import { getPrimitives } from "./store/pointer_utils";
+import { pointerUtils } from "@twig/store";
 
 export function flattenJson(
   value:any,
@@ -6,5 +6,5 @@ export function flattenJson(
   collector: Record<string, string> = {}
 ): Record<string, string> {
 
-  return getPrimitives(value, basePath, collector)
+  return pointerUtils.getPrimitives(value, basePath, collector)
 }

@@ -1,6 +1,6 @@
 // client/APIClient.ts
 
-import { ChangeMessage, IDataClient, WatchHandle } from "./types";
+import { ChangeMessage, IClient, WatchHandle } from "../types";
 
 interface APIClientParams {
     domain: string
@@ -9,7 +9,7 @@ interface APIClientParams {
     token?: string
 }
 
-export default class APIClient implements IDataClient {
+export class APIClient implements IClient {
     private token?: string;
     protected url: string;
     protected ws: string;

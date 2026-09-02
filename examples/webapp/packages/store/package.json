@@ -1,0 +1,11 @@
+{
+  "name": "@twig/store",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "jsonpointer": "^5.0.1"
+  }
+}

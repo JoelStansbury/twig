@@ -1,16 +1,16 @@
 import JSONPointer from "jsonpointer";
-import { IDataClient, ChangeMessage, WatchHandle } from "./client/types";
+import { IClient, ChangeMessage, WatchHandle } from "./types";
 import { fromParts, getAncestorPaths, getParts, makeAncestors } from "./pointer_utils"
 import JsonPointer from "jsonpointer";
 
-export default class TwigStore {
-    private client: IDataClient
+export class Store {
+    private client: IClient
     private space: string
     private websocket?: WatchHandle
     private listeners = new Map<string,Set<(msg:any)=>void>>()
     data: Record<string, any> = {}
 
-    constructor(client: IDataClient, space: string) {
+    constructor(client: IClient, space: string) {
         this.client = client
         this.space = space
     }
@@ -43,6 +43,18 @@ export default class TwigStore {
 
     async get(path: string) {
         return await this.client.get(path, this.space)
+    }
+
+    async put(path:string, value:any) {
+        return this.client.put(path, this.space, value)
+    }
+
+    async peek(path:string) {
+        return this.client.peek(path, this.space)
+    }
+
+    async match(wildpath:string) {
+        return this.client.match(wildpath, this.space)
     }
 
     unsubscribe(path: string, callback: (msg:ChangeMessage)=>void) {

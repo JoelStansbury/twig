@@ -1,193 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { Graph } from "../utils/calc";
-import { StoreInterface } from "../utils/store_interface";
-import { IDataClient } from "../utils/store/client/types";
-import TwigStore from "../utils/store/store";
+import { Graph } from "@twig/pointer-chain";
+import { client, Store } from "@twig/store";
 
 //
-// A very small JSON-pointer store for testing.
-//
-// Internally it stores one ordinary JSON object. Paths such as:
-//
-//     /users/123/name
-//
-// are resolved against that object.
-//
-// This intentionally implements only the behavior Graph needs.
-//
-class JsonPointerStore extends StoreInterface {
-    private data: any;
-
-    async initialize(onchange: (value: any) => void): Promise<void> {
-        return void (0);
-    }
-
-    async peek(path: string): Promise<string[]> {
-        return Object.keys(this.get(path))
-    }
-
-    constructor(initial: any = {}) {
-        super()
-        this.data = structuredClone(initial);
-    }
-
-    async get(path: string): Promise<any> {
-        return this.getPointer(path);
-    }
-
-    async put(path: string, value: any): Promise<Response> {
-        this.setPointer(path, value);
-        return {} as Response
-    }
-
-    async match(wildpath: string): Promise<string[][]> {
-        const parts = wildpath.split('/').slice(1);
-        const results: string[][] = [];
-
-        function traverse(current: any, index: number, currentCaptures: string[]) {
-
-            // If we reached the end of the path
-            if (index === parts.length) {
-                // If the path had wildcards, return the captured keys
-                if (currentCaptures.length > 0) {
-                    results.push(currentCaptures);
-                }
-                return;
-            }
-
-            const part = parts[index];
-
-            // If we are at a wildcard
-            if (part === '*') {
-                if (current && typeof current === 'object') {
-                    const keys = Object.keys(current);
-                    for (const key of keys) {
-                        // We capture the key as the "group"
-                        traverse(current[key], index + 1, [...currentCaptures, key]);
-                    }
-                }
-            } else {
-                // If we are at a static key
-                if (current && typeof current === 'object' && part in current) {
-                    traverse(
-                        current[part], 
-                        index + 1, 
-                        currentCaptures
-                    );
-                }
-            }
-        }
-
-        traverse(this.data, 0, []);
-        return results;
-    }
-
-    //
-    // Test helper: inspect the entire JSON document.
-    //
-    snapshot(): any {
-        return structuredClone(this.data);
-    }
-
-    //
-    // Test helper: count a particular path's value.
-    //
-    async value(path: string): Promise<any> {
-        return this.get(path);
-    }
-
-    private parsePointer(pointer: string): string[] {
-        if (pointer === "") {
-            return [];
-        }
-
-        if (!pointer.startsWith("/")) {
-            throw new Error(`Invalid JSON pointer: ${pointer}`);
-        }
-
-        return pointer
-            .slice(1)
-            .split("/")
-            .map(part =>
-                part
-                    .replace(/~1/g, "/")
-                    .replace(/~0/g, "~")
-            );
-    }
-
-    private pointer(parts: string[]): string {
-        return parts
-            .map(part =>
-                part
-                    .replace(/~/g, "~0")
-                    .replace(/\//g, "~1")
-            )
-            .map(part => `/${part}`)
-            .join("");
-    }
-
-    private getPointer(pointer: string): any {
-        const parts = this.parsePointer(pointer);
-
-        let current = this.data;
-
-        for (const part of parts) {
-            if (
-                current === null ||
-                current === undefined ||
-                typeof current !== "object" ||
-                !(part in current)
-            ) {
-                return undefined;
-            }
-
-            current = current[part];
-        }
-
-        return structuredClone(current);
-    }
-
-    private setPointer(pointer: string, value: any): void {
-        const parts = this.parsePointer(pointer);
-
-        if (parts.length === 0) {
-            this.data = structuredClone(value);
-            return;
-        }
-
-        let current = this.data;
-
-        for (let i = 0; i < parts.length - 1; i++) {
-            const part = parts[i];
-
-            if (
-                current[part] === undefined ||
-                current[part] === null ||
-                typeof current[part] !== "object"
-            ) {
-                current[part] = {};
-            }
-
-            current = current[part];
-        }
-
-        current[parts[parts.length - 1]] =
-            structuredClone(value);
-    }
-}
-
-
-//
-// Helper for creating a graph and store together.
+// Helper for creating a graph and db together.
 //
 function createGraph(initial: any) {
-    const store = new JsonPointerStore(initial);
+    const db = new client.MemClient(initial);
+    const store = new Store(db, "")
     const graph = new Graph(store);
 
     return { graph, store };
 }
 
-describe("Test Store", () => {
+describe("Test store", () => {
     it("can match multi-paths", async () => {
         const { graph, store } = createGraph({
             users: {
@@ -218,18 +44,18 @@ describe("Graph", () => {
                 output: 0
             });
 
-            await store.put("/templates/double", "{{ value * 2 }}");
             graph.insertFunc(
                 "/functions/double",
                 {
                     value: "/input"
                 },
-                "/output"
+                "/output",
+                "{{ value * 2 }}"
             );
 
             await graph.registerChange("/input", 20);
 
-            expect(await store.value("/output"))
+            expect(await store.get("/output"))
                 .toBe(40);
         });
     });
@@ -249,19 +75,18 @@ describe("Graph", () => {
                     price: "/price",
                     quantity: "/quantity"
                 },
-                "/total"
+                "/total",
+                "{{ price * quantity }}"
             );
-
-            await store.put("/templates/total","{{ price * quantity }}");
 
             await graph.registerChange("/price", 15);
 
-            expect(await store.value("/total"))
+            expect(await store.get("/total"))
                 .toBe(30);
 
             await graph.registerChange("/quantity", 4);
 
-            expect(await store.value("/total"))
+            expect(await store.get("/total"))
                 .toBe(60);
         });
     });
@@ -280,7 +105,8 @@ describe("Graph", () => {
                 {
                     value: "/input"
                 },
-                "/intermediate"
+                "/intermediate",
+                "{{ value * 2 }}"
             );
 
             graph.insertFunc(
@@ -288,15 +114,8 @@ describe("Graph", () => {
                 {
                     value: "/intermediate"
                 },
-                "/output"
-            );
-
-            await store.put(
-                "/templates/double","{{ value * 2 }}"
-            );
-
-            await store.put(
-                "/templates/addOne","{{ value + 1 }}"
+                "/output",
+                "{{ value + 1 }}"
             );
 
             await graph.registerChange("/input", 10);
@@ -305,10 +124,10 @@ describe("Graph", () => {
              * If the functions were evaluated concurrently, addOne could
              * observe the old value of intermediate.
              */
-            expect(await store.value("/intermediate"))
+            expect(await store.get("/intermediate"))
                 .toBe(20);
 
-            expect(await store.value("/output"))
+            expect(await store.get("/output"))
                 .toBe(21);
         });
     });
@@ -328,7 +147,8 @@ describe("Graph", () => {
                 {
                     value: "/input"
                 },
-                "/left"
+                "/left",
+                "{{ value * 10 }}"
             );
 
             graph.insertFunc(
@@ -336,7 +156,8 @@ describe("Graph", () => {
                 {
                     value: "/input"
                 },
-                "/right"
+                "/right",
+                "{{ value * 100 }}"
             );
 
             graph.insertFunc(
@@ -345,24 +166,19 @@ describe("Graph", () => {
                     left: "/left",
                     right: "/right"
                 },
-                "/result"
+                "/result",
+                "{{ left + right }}"
             );
-
-            await store.put("/templates/left","{{ value * 10 }}");
-
-            await store.put("/templates/right","{{ value * 100 }}");
-
-            await store.put("/templates/result","{{ left + right }}");
 
             await graph.registerChange("/input", 2);
 
-            expect(await store.value("/left"))
+            expect(await store.get("/left"))
                 .toBe(20);
 
-            expect(await store.value("/right"))
+            expect(await store.get("/right"))
                 .toBe(200);
 
-            expect(await store.value("/result"))
+            expect(await store.get("/result"))
                 .toBe(220);
         });
     });
@@ -376,14 +192,14 @@ describe("Graph", () => {
                 output: 20
             });
 
-            let finalEvaluations = 0;
 
             graph.insertFunc(
                 "/functions/identity",
                 {
                     value: "/input"
                 },
-                "/intermediate"
+                "/intermediate",
+                "{{ value * 2 }}"
             );
 
             graph.insertFunc(
@@ -391,12 +207,9 @@ describe("Graph", () => {
                 {
                     value: "/intermediate"
                 },
-                "/output"
+                "/output",
+                "{{ value * 2 }}"
             );
-
-            await store.put("/templates/identity","{{ value * 2 }}");
-
-            await store.put("/templates/double","{{ value * 2 }}");
 
             /*
              * This changes the input but the identity function still produces
@@ -404,10 +217,10 @@ describe("Graph", () => {
              */
             await graph.registerChange("/input", 5);
 
-            expect(await store.value("/intermediate"))
+            expect(await store.get("/intermediate"))
                 .toBe(10);
 
-            expect(await store.value("/output"))
+            expect(await store.get("/output"))
                 .toBe(20);
         });
     });
@@ -427,17 +240,17 @@ describe("Graph", () => {
                     first: "/first",
                     last: "/last"
                 },
-                "/person"
+                "/person",
+                "{\"name\":\"{{ first }} {{ last }}\"}"
             );
 
-            await store.put("/templates/person",JSON.stringify({name: "{{ first }} {{ last }}"}));
 
             await graph.registerChange(
                 "/first",
                 "John"
             );
 
-            expect(await store.value("/person"))
+            expect(await store.get("/person"))
                 .toEqual({
                     name: "John Smith"
                 });
@@ -459,9 +272,6 @@ describe("Graph", () => {
                         quantity: 5,
                         total: 0
                     }
-                },
-                templates: {
-                    total: "{{ price * quantity }}"
                 }
             });
 
@@ -472,7 +282,8 @@ describe("Graph", () => {
                     price: "/products/{{id}}/price",
                     quantity: "/products/{{ id }}/quantity"
                 },
-                "/products/{{ id }}/total"
+                "/products/{{ id }}/total",
+                "{{ price * quantity }}"
             );
 
             await graph.registerChange(
@@ -480,12 +291,12 @@ describe("Graph", () => {
                 10
             );
 
-            expect(await store.value(
+            expect(await store.get(
                 "/products/apple/total"
             )).toBe(30);
 
             // Should still be zero because no inputs have changed
-            expect(await store.value(
+            expect(await store.get(
                 "/products/orange/total"
             )).toBe(0);
         });
@@ -503,9 +314,6 @@ describe("Graph", () => {
                             }
                         }
                     }
-                },
-                templates: {
-                    total: '"COPY {{ hobbyName }}"'
                 }
             });
 
@@ -515,16 +323,17 @@ describe("Graph", () => {
                 {
                     hobbyName: "/users/{{ userKey }}/hobbies/{{ hobbyKey }}/name"
                 },
-                "/users/{{ userKey }}/hobbies/{{ hobbyKey }}/name_copy"
+                "/users/{{ userKey }}/hobbies/{{ hobbyKey }}/name_copy",
+                '"COPY {{ hobbyName }}"'
             );
             await graph.registerChange(
                 "/users/123/hobbies/a/name",
                 "Cars"
             );
-            expect(await store.value(
+            expect(await store.get(
                 "/users/123/hobbies/a/name_copy"
             )).toBe("COPY Cars")
-            expect(await store.value(
+            expect(await store.get(
                 "/users/123/hobbies/b/name_copy"
             )).toBe(undefined)
 
@@ -532,7 +341,7 @@ describe("Graph", () => {
                 "/users/123/hobbies/b/name",
                 "Games"
             );
-            expect(await store.value(
+            expect(await store.get(
                 "/users/123/hobbies/b/name_copy"
             )).toBe("COPY Games")
 
@@ -571,7 +380,7 @@ describe("Graph", () => {
 
     describe("JSON pointer behavior", () => {
         it("handles nested paths", async () => {
-            const store = new JsonPointerStore({
+            const {store} = createGraph({
                 users: {
                     "123": {
                         name: "Alice"
@@ -594,7 +403,7 @@ describe("Graph", () => {
         });
 
         it("creates missing intermediate objects", async () => {
-            const store = new JsonPointerStore();
+            const {store} = createGraph({});
 
             await store.put(
                 "/users/123/name",
