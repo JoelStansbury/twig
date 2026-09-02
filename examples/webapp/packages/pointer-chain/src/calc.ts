@@ -607,7 +607,7 @@ export class Graph {
 
         for (const [keyword, templatePath] of Object.entries(context)) {
             // console.log("RENDERING", {templatePath, resolvedContext})
-            let pointer = renderString(templatePath, resolvedContext);
+            const pointer = renderString(templatePath, resolvedContext);
             resolvedContext[keyword] =
                 await this.store.get(pointer);
 

@@ -15,7 +15,7 @@ function createGraph(initial: any) {
 
 describe("Test store", () => {
     it("can match multi-paths", async () => {
-        const { graph, store } = createGraph({
+        const { store } = createGraph({
             users: {
                 "123": {
                     hobbies: {

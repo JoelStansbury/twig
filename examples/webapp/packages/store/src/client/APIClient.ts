@@ -162,7 +162,7 @@ export class APIClient implements IClient {
 
 
         return new Promise(
-            (resolve, reject) => {
+            (resolve) => {
                 ws!.onopen = () => {
                     resolve({
                         close() {
