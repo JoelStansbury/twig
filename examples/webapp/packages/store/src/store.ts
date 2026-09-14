@@ -1,9 +1,9 @@
 import JSONPointer from "jsonpointer";
-import { IClient, ChangeMessage, WatchHandle } from "./types";
-import { fromParts, getAncestorPaths, getParts, makeAncestors } from "./pointer_utils"
+import { IClient, ChangeMessage, WatchHandle, IStore } from "./types";
+import { fromParts, getAncestorPaths, getParts, makeAncestors } from "../../utils/src/pointer_utils"
 import JsonPointer from "jsonpointer";
 
-export class Store {
+export class Store implements IStore {
     private client: IClient
     private space: string
     private websocket?: WatchHandle

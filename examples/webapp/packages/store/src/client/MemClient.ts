@@ -1,6 +1,6 @@
 import JSONPointer from "jsonpointer";
 import { ChangeMessage, IClient, WatchHandle } from "../types";
-import { getParts } from "../pointer_utils";
+import { getParts } from "../../../utils/src/pointer_utils";
 
 export class MemClient implements IClient {
     private data: any;

@@ -4,7 +4,7 @@ import {
     IClient,
     WatchHandle,
 } from "../types";
-import { getAncestorPaths, getPrimitives } from "../pointer_utils";
+import { getAncestorPaths, getPrimitives } from "../../../utils/src/pointer_utils";
 
 
 export class IDBClient

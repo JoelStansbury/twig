@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import SchemaEditor from "./components/schema-editor";
-import { pointerUtils } from "@twig/store";
+import { pointerUtils } from "@twig/utils";
 import PrimitiveList from "./components/primitive-list";
 import { StoreInterface } from "./utils/store_interface";
 import { Graph } from "@twig/pointer-chain";
+import { CalculationEditor } from "@twig/pointer-chain";
 // import { findDependents, formatString, run } from "./utils/calc";
 
 export default function App() {
@@ -52,17 +53,26 @@ export default function App() {
     [storeRef]
   )
   
-  return <div className="app">
-    <div
-      style={{
-        height:"100%",
-        display: "flex",
-        flexDirection: "row"
-      }}
-    >
-      <SchemaEditor value={text || ""} onChange={onTextChange}/>
-      <PrimitiveList entries={entries} onChange={onPrimitiveChange}/>
-    </div>
-    </div>
+
+  if (storeRef.current) {
+    return <div className="app">
+      <div
+        style={{
+          height:"50%",
+          display: "flex",
+          flexDirection: "row"
+        }}
+      >
+        <SchemaEditor value={text || ""} onChange={onTextChange}/>
+        <PrimitiveList entries={entries} onChange={onPrimitiveChange}/>
+      </div>
+        <div>
+          
+        </div>
+        <CalculationEditor store={storeRef.current!.store}></CalculationEditor>
+      </div>
+  } else {
+    return "Loading"
+  }
 }
 
