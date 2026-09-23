@@ -178,7 +178,7 @@ const styles = `
     border: 1px solid #ddd;
     border-radius: 8px;
     margin-bottom: 16px;
-    overflow: hidden;
+    overflow: visible;
     background: white;
 }
 
@@ -283,6 +283,7 @@ const styles = `
 
 .ce-path-picker {
     flex: 1;
+    position: relative;
 }
 
 .ce-path-input {
