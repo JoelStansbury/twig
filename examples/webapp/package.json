@@ -25,6 +25,8 @@
   "dependencies": {
     "@twig/pointer-chain": "0.0.0",
     "@twig/store": "0.0.0",
+    "@twig/utils": "0.0.0",
+    "@twig/layout": "0.0.0",
     "@monaco-editor/react": "^4.7.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"

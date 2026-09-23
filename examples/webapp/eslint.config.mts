@@ -7,7 +7,7 @@ import unusedImports from "eslint-plugin-unused-imports";
 
 export default defineConfig([
   { 
-    files: ["**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"], 
+    files: ["**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"],
     plugins: { 
       js, 
       "unused-imports": unusedImports

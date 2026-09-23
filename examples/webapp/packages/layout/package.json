@@ -1,0 +1,11 @@
+{
+  "name": "@twig/layout",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@mui/material":"^9.4.0"
+  }
+}
