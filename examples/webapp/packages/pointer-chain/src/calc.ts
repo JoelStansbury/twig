@@ -33,7 +33,6 @@ export class Graph {
 
     private getParents(path: string): string [] {
         const ret: string[] = [];
-        console.log("getParents")
         let cursor = ""
         for (const part of getParts(path).slice(0,-1)) {
             cursor = cursor + `/${escape(part)}`
@@ -44,22 +43,11 @@ export class Graph {
     }
 
     private getConsumers(path: string): string[] {
-        // console.log("getConsumers", {path, nodes:this.nodes})
         const node = this.nodes[path];
-        let ret: string[] = []
         if (node!==undefined) {
-            ret = node.consumers
+            return node.consumers
         }
-        // consumers of ancestors
-        // for (const ancestor of this.getParents(path)) {
-        //     console.log("checking parent", ancestor)
-        //     const ancestorNode = this.nodes[ancestor]
-        //     if (ancestorNode !== undefined) {
-        //         ret.push(...ancestorNode.consumers)
-        //     }
-        // }
-        // console.log("Result", ret)
-        return unique(ret);
+        return [];
     }
 
     private getFeeders(path: string): string[] {
@@ -157,8 +145,6 @@ export class Graph {
         funcPath: string
     ): Promise<Record<string, any>> {
         const feeders = this.getFeeders(funcPath);
-
-        // console.log({feeders, data:await this.store.get("")})
         const values = await Promise.all(
             feeders.map(feeder => this.store.get(feeder))
         );
@@ -207,7 +193,6 @@ export class Graph {
             template,
             context
         );
-        // console.log({template, context, rendered, targetPath})
 
         const newValue = JSON.parse(rendered);
 
@@ -279,7 +264,6 @@ export class Graph {
 
         for (const anc of this.getParents(path)) {
             if (this.nodes[anc] !== undefined) {
-                console.log("prop ancestor", anc)
                 this.propagate(anc)
             }
         }
@@ -341,7 +325,6 @@ export class Graph {
                 }
             }
         }
-
     }
 
     // -------------------------------------------------------------------------
@@ -559,7 +542,6 @@ export class Graph {
                 range_mapper,
                 resolvedContext
             );
-            // console.log({target, resolvedContext, resolvedTarget})
 
             /*
              * The resolved context is used to render the target.
@@ -642,14 +624,12 @@ export class Graph {
         const dependencies: Record<string, string> = {};
 
         for (const [keyword, templatePath] of Object.entries(context)) {
-            // console.log("RENDERING", {templatePath, resolvedContext})
             const pointer = renderString(templatePath, resolvedContext);
             resolvedContext[keyword] =
                 await this.store.get(pointer);
 
             dependencies[keyword] = pointer;
         }
-        // console.log({resolvedContext})
         return [
             resolvedContext,
             dependencies
