@@ -15,3 +15,10 @@ export function cartesianProduct<T>(arrays: T[][]): T[][] {
         [[]]
     );
 }
+
+export function escape(part: string) {
+    return part.replace("~", "~0").replace("/", "~1")
+}
+export function unescape(part: string) {
+    return part.replace(/~1/g, "/").replace(/~0/g, "~")
+}

@@ -1,9 +1,11 @@
 import { renderString } from "nunjucks";
 import { Store } from "@twig/store";
-import { cartesianProduct, getParts } from "./utils";
+import { cartesianProduct, escape, getParts } from "./utils";
 import { Node, Edge, ChangeMessage } from "./types";
 
-
+function unique<T>(array: T[]): T[] {
+  return [...new Set(array)];
+}
 // TODO:
 // Instance Prefix or something
 //    The template is stored in a Map, the key is the funcName. 
@@ -29,14 +31,35 @@ export class Graph {
         return `${source}::${target}`;
     }
 
-    private getConsumers(path: string): string[] {
-        const node = this.nodes[path];
-
-        if (!node) {
-            return []
+    private getParents(path: string): string [] {
+        const ret: string[] = [];
+        console.log("getParents")
+        let cursor = ""
+        for (const part of getParts(path).slice(0,-1)) {
+            cursor = cursor + `/${escape(part)}`
+            ret.push(cursor)
         }
+        ret.reverse()
+        return ret
+    }
 
-        return node.consumers;
+    private getConsumers(path: string): string[] {
+        // console.log("getConsumers", {path, nodes:this.nodes})
+        const node = this.nodes[path];
+        let ret: string[] = []
+        if (node!==undefined) {
+            ret = node.consumers
+        }
+        // consumers of ancestors
+        // for (const ancestor of this.getParents(path)) {
+        //     console.log("checking parent", ancestor)
+        //     const ancestorNode = this.nodes[ancestor]
+        //     if (ancestorNode !== undefined) {
+        //         ret.push(...ancestorNode.consumers)
+        //     }
+        // }
+        // console.log("Result", ret)
+        return unique(ret);
     }
 
     private getFeeders(path: string): string[] {
@@ -135,7 +158,7 @@ export class Graph {
     ): Promise<Record<string, any>> {
         const feeders = this.getFeeders(funcPath);
 
-        console.log({feeders, data:await this.store.get("")})
+        // console.log({feeders, data:await this.store.get("")})
         const values = await Promise.all(
             feeders.map(feeder => this.store.get(feeder))
         );
@@ -184,7 +207,7 @@ export class Graph {
             template,
             context
         );
-        console.log({template, context, rendered, targetPath})
+        // console.log({template, context, rendered, targetPath})
 
         const newValue = JSON.parse(rendered);
 
@@ -252,6 +275,18 @@ export class Graph {
         }
 
         await this.store.put(path, value);
+        await this.propagate(path)
+
+        for (const anc of this.getParents(path)) {
+            if (this.nodes[anc] !== undefined) {
+                console.log("prop ancestor", anc)
+                this.propagate(anc)
+            }
+        }
+    }
+    public async propagate(
+        path: string,
+    ): Promise<void> {
         const chain = this.calcChain(path);
 
         /*
@@ -306,6 +341,7 @@ export class Graph {
                 }
             }
         }
+
     }
 
     // -------------------------------------------------------------------------

@@ -25,6 +25,7 @@ export default function PrimitiveList({
         padding: 12,
         boxSizing: "border-box",
         fontFamily: "sans-serif",
+        minWidth: "100px",
       }}
     >
 

@@ -75,7 +75,7 @@ export const VSplit = (props: {children: ReactNode, position?: number[], key: st
               lower = sum(oldValue.slice(0,index))
             }
             if (index === oldValue.length - 2) {
-              upper = 99.5
+              upper = 100
             } else {
               upper = lower + oldValue[index] + oldValue[index + 1]
             }
@@ -99,7 +99,11 @@ export const VSplit = (props: {children: ReactNode, position?: number[], key: st
       <div
         key={`${props.key}-child-${i}`}
         className="grid-div-column-child-container"
-        style={{height: `${pos[i]}%`}}>{child}</div>)
+        style={{
+          height: `${pos[i]}%`,
+          // minHeight: "4px",
+          // maxHeight: "calc(100% - 4px)"
+        }}>{child}</div>)
     if (i < children.length-1) {
       innerContent.push(<DragBar key={`${props.key}-bar-${i}`} onChange={onchange.bind(null, i)}></DragBar>)
       i = i + 1

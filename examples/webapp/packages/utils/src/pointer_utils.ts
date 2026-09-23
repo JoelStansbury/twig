@@ -14,7 +14,7 @@ export function getParts(path: string) {
     const ret: string[] = []
     const parts = path.split("/").slice(1);
     for (const part of parts) {
-        ret.push(part.replace(/~1/g, "/").replace(/~0/g, "~"))
+        ret.push(unescape(part))
     } 
     return ret
 }
@@ -24,8 +24,15 @@ export function fromParts(parts: string[]) {
         return ""
     }
     const escapedParts: string[] = []
-    parts.map((part) => {escapedParts.push(part.replace("~", "~0").replace("/", "~1"))})
+    parts.map((part) => {escapedParts.push(escape(part))})
     return `/${escapedParts.join("/")}`
+}
+
+export function escape(part: string) {
+    return part.replace("~", "~0").replace("/", "~1")
+}
+export function unescape(part: string) {
+    return part.replace(/~1/g, "/").replace(/~0/g, "~")
 }
 
 export function makeAncestors(data: any, path: string) {
