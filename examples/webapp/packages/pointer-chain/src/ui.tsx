@@ -191,6 +191,7 @@ const styles = `
 
 .ce-section-body {
     padding: 16px;
+    min-height: 66px;
 }
 
 .ce-row {
@@ -281,7 +282,6 @@ const styles = `
 }
 
 .ce-path-picker {
-    position: absolute;
     flex: 1;
 }
 
@@ -435,22 +435,15 @@ export function PathPicker({
     const [error, setError] = useState<string>();
 
     const containerRef = useRef<HTMLDivElement>(null);
-
     const load = useCallback(
         async (path: string) => {
             setLoading(true);
             setError(undefined);
-
+            
             try {
                 log.path("peek", path);
-
-                /*
-                 * The important root behavior:
-                 *
-                 * peek("") -> root nodes
-                 */
                 const result = await store.peek(path);
-
+                console.log(result)
                 setChildren(result || []);
                 setNavigationPath(path);
             } catch (err) {
@@ -531,14 +524,8 @@ export function PathPicker({
         await load(parent);
     };
 
-    const selectVariable = (variable: string) => {
-        const token = `{{${variable}}}`;
-
-        onChange(
-            value.length > 0
-                ? `${value}${token}`
-                : token
-        );
+    const selectVariable = async (variable: string) => {
+        onChange(`${value}/{{ ${variable} }}`);
     };
 
     const showValue = async (path: string) => {

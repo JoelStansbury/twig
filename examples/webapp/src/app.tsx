@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { JSX, useCallback, useEffect, useRef, useState } from "react";
 import SchemaEditor from "./components/schema-editor";
 import { pointerUtils } from "@twig/utils";
 import PrimitiveList from "./components/primitive-list";
 import { StoreInterface } from "./utils/store_interface";
 import { Graph } from "@twig/pointer-chain";
 import { CalculationEditor } from "@twig/pointer-chain";
+import { Dock, HSplit, VSplit } from "@twig/layout";
 // import { findDependents, formatString, run } from "./utils/calc";
 
 export default function App() {
@@ -53,24 +54,18 @@ export default function App() {
     [storeRef]
   )
   
-
   if (storeRef.current) {
-    return <div className="app">
-      <div
-        style={{
-          height:"50%",
-          display: "flex",
-          flexDirection: "row"
-        }}
-      >
-        <SchemaEditor value={text || ""} onChange={onTextChange}/>
-        <PrimitiveList entries={entries} onChange={onPrimitiveChange}/>
-      </div>
-        <div>
-          
+    return <Dock>
+      <VSplit key="">
+        <HSplit key="h">
+          <SchemaEditor value={text || ""} onChange={onTextChange}/>
+          <PrimitiveList entries={entries} onChange={onPrimitiveChange}/>
+        </HSplit>
+        <div style={{overflowY:"scroll", height: "100%"}}>
+          <CalculationEditor store={storeRef.current!.store}></CalculationEditor>
         </div>
-        <CalculationEditor store={storeRef.current!.store}></CalculationEditor>
-      </div>
+      </VSplit>
+    </Dock>
   } else {
     return "Loading"
   }

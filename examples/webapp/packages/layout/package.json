@@ -1,5 +1,5 @@
 {
-  "name": "@twig/dock",
+  "name": "@twig/layout",
   "version": "0.0.0",
   "type": "module",
   "exports": {
